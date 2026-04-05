@@ -42,6 +42,21 @@ button.secondary { background: #1c3568; color: var(--text); border-color: var(--
 
 .form-grid { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
 .subsystem-grid { display: grid; gap: 12px; grid-template-columns: repeat(2, minmax(260px, 1fr)); }
+.text-danger { color: #fecaca; }
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(3, 9, 24, 0.72);
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  z-index: 1000;
+}
+.modal-card {
+  width: min(860px, 96vw);
+  max-height: 92vh;
+  overflow: auto;
+}
 table { width: 100%; border-collapse: collapse; }
 th, td { border-bottom: 1px solid var(--line); padding: 8px; text-align: left; }
 th { color: var(--accent); }

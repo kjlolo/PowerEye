@@ -25,10 +25,11 @@ export default function SiteListPage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [showModal, setShowModal] = useState(false);
   const mqttCredentialsUrl = `${window.location.protocol}//${window.location.hostname}:18083/#/authentication`;
 
-  const load = async () => {
-    const { data } = await api.get("/sites", { params: { search } });
+  const load = async (searchTerm = search) => {
+    const { data } = await api.get("/sites", { params: { search: searchTerm } });
     setItems(data.items || []);
   };
 
@@ -83,11 +84,14 @@ export default function SiteListPage() {
       }
       setForm(emptySite);
       setEditing(false);
+      setShowModal(false);
       await load();
     } catch (err) {
       const detail = err?.response?.data?.detail;
       if (detail === "site_exists") {
-        setError("Site ID already exists.");
+        setSearch(payload.site_id);
+        await load(payload.site_id);
+        setError(`Site ID ${payload.site_id} already exists. Showing existing record.`);
       } else {
         setError(detail || err?.message || "Failed to save site.");
       }
@@ -101,6 +105,7 @@ export default function SiteListPage() {
     setNotice("");
     setForm({ ...s, lat: s.lat ?? "", lng: s.lng ?? "" });
     setEditing(true);
+    setShowModal(true);
   };
 
   const onDelete = async (siteId) => {
@@ -117,6 +122,20 @@ export default function SiteListPage() {
           <input placeholder="Search site..." value={search} onChange={(e) => setSearch(e.target.value)} />
           <button onClick={load}>Refresh</button>
           {isAdmin && (
+            <button
+              type="button"
+              onClick={() => {
+                setEditing(false);
+                setForm(emptySite);
+                setError("");
+                setNotice("");
+                setShowModal(true);
+              }}
+            >
+              Create Site
+            </button>
+          )}
+          {isAdmin && (
             <a href={mqttCredentialsUrl} target="_blank" rel="noreferrer">
               <button type="button" className="secondary">Device Credentials</button>
             </a>
@@ -124,38 +143,45 @@ export default function SiteListPage() {
         </div>
       </div>
 
-      {isAdmin && (
-        <form className="card form-grid" onSubmit={onSave}>
-          <h3>{editing ? "Edit Site" : "Create Site"}</h3>
-          <input placeholder="Site ID" value={form.site_id} disabled={editing || saving} onChange={(e) => setForm({ ...form, site_id: e.target.value })} />
-          <input placeholder="Site Name" value={form.site_name} disabled={saving} onChange={(e) => setForm({ ...form, site_name: e.target.value })} />
-          <input placeholder="Area ID" value={form.area_id} disabled={saving} onChange={(e) => setForm({ ...form, area_id: e.target.value })} />
-          <input placeholder="Region" value={form.region} disabled={saving} onChange={(e) => setForm({ ...form, region: e.target.value })} />
-          <input placeholder="City" value={form.city} onChange={(e) => setForm({ ...form, city: e.target.value })} />
-          <input placeholder="Province" value={form.province} onChange={(e) => setForm({ ...form, province: e.target.value })} />
-          <input placeholder="Latitude" value={form.lat} onChange={(e) => setForm({ ...form, lat: e.target.value })} />
-          <input placeholder="Longitude" value={form.lng} onChange={(e) => setForm({ ...form, lng: e.target.value })} />
-          <input placeholder="Criticality Weight" value={form.criticality_weight} onChange={(e) => setForm({ ...form, criticality_weight: e.target.value })} />
-          {error && <div className="danger">{error}</div>}
-          {notice && <div>{notice}</div>}
-          <div className="row">
-            <button type="submit" disabled={saving}>{saving ? "Saving..." : editing ? "Update" : "Create"}</button>
-            {editing && (
-              <button
-                type="button"
-                onClick={() => {
-                  setEditing(false);
-                  setForm(emptySite);
-                  setError("");
-                  setNotice("");
-                }}
-                disabled={saving}
-              >
-                Cancel
-              </button>
-            )}
+      {error && !showModal && <div className="card text-danger">{error}</div>}
+      {notice && !showModal && <div className="card">{notice}</div>}
+
+      {isAdmin && showModal && (
+        <div className="modal-backdrop" onClick={() => !saving && setShowModal(false)}>
+          <div className="card modal-card" onClick={(e) => e.stopPropagation()}>
+            <form className="form-grid" onSubmit={onSave}>
+              <h3>{editing ? "Edit Site" : "Create Site"}</h3>
+              <input placeholder="Site ID" value={form.site_id} disabled={editing || saving} onChange={(e) => setForm({ ...form, site_id: e.target.value })} />
+              <input placeholder="Site Name" value={form.site_name} disabled={saving} onChange={(e) => setForm({ ...form, site_name: e.target.value })} />
+              <input placeholder="Area ID" value={form.area_id} disabled={saving} onChange={(e) => setForm({ ...form, area_id: e.target.value })} />
+              <input placeholder="Region" value={form.region} disabled={saving} onChange={(e) => setForm({ ...form, region: e.target.value })} />
+              <input placeholder="City" value={form.city} onChange={(e) => setForm({ ...form, city: e.target.value })} />
+              <input placeholder="Province" value={form.province} onChange={(e) => setForm({ ...form, province: e.target.value })} />
+              <input placeholder="Latitude" value={form.lat} onChange={(e) => setForm({ ...form, lat: e.target.value })} />
+              <input placeholder="Longitude" value={form.lng} onChange={(e) => setForm({ ...form, lng: e.target.value })} />
+              <input placeholder="Criticality Weight" value={form.criticality_weight} onChange={(e) => setForm({ ...form, criticality_weight: e.target.value })} />
+              {error && <div className="text-danger">{error}</div>}
+              {notice && <div>{notice}</div>}
+              <div className="row">
+                <button type="submit" disabled={saving}>{saving ? "Saving..." : editing ? "Update" : "Create"}</button>
+                <button
+                  type="button"
+                  className="secondary"
+                  onClick={() => {
+                    setShowModal(false);
+                    setEditing(false);
+                    setForm(emptySite);
+                    setError("");
+                    setNotice("");
+                  }}
+                  disabled={saving}
+                >
+                  Close
+                </button>
+              </div>
+            </form>
           </div>
-        </form>
+        </div>
       )}
 
       <div className="card">
@@ -190,6 +216,11 @@ export default function SiteListPage() {
                 )}
               </tr>
             ))}
+            {items.length === 0 && (
+              <tr>
+                <td colSpan={isAdmin ? 7 : 6}>No sites found.</td>
+              </tr>
+            )}
           </tbody>
         </table>
       </div>
