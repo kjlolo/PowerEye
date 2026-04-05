@@ -29,8 +29,21 @@ export default function SiteListPage() {
   const mqttCredentialsUrl = `${window.location.protocol}//${window.location.hostname}:18083/#/authentication`;
 
   const load = async (searchTerm = search) => {
-    const { data } = await api.get("/sites", { params: { search: searchTerm } });
-    setItems(data.items || []);
+    try {
+      const { data } = await api.get("/sites", { params: { search: searchTerm } });
+      setItems(data.items || []);
+      if ((data.items || []).length === 0) {
+        setNotice("No sites matched the current filter.");
+      } else {
+        setNotice("");
+      }
+      setError("");
+    } catch (err) {
+      setItems([]);
+      setNotice("");
+      const detail = err?.response?.data?.detail;
+      setError(detail || err?.message || "Failed to load site list.");
+    }
   };
 
   useEffect(() => {
@@ -122,6 +135,16 @@ export default function SiteListPage() {
         <div className="row">
           <input placeholder="Search site..." value={search} onChange={(e) => setSearch(e.target.value)} />
           <button onClick={load}>Refresh</button>
+          <button
+            type="button"
+            className="secondary"
+            onClick={() => {
+              setSearch("");
+              load("");
+            }}
+          >
+            Clear
+          </button>
           {isAdmin && (
             <button
               type="button"
