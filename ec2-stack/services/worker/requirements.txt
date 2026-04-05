@@ -1,0 +1,5 @@
+paho-mqtt==2.1.0
+influxdb-client==1.46.0
+sqlalchemy==2.0.35
+psycopg[binary]==3.2.1
+pydantic-settings==2.5.2

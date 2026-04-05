@@ -1,0 +1,125 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: Power Eye Site Registry API (Lambda + API Gateway + DynamoDB)
+
+Parameters:
+  TableName:
+    Type: String
+    Default: powereye-site-registry
+  CorsOrigin:
+    Type: String
+    Default: "*"
+  ApiToken:
+    Type: String
+    Default: ""
+    NoEcho: true
+
+Globals:
+  Function:
+    Runtime: python3.12
+    Timeout: 10
+    MemorySize: 256
+    Architectures:
+      - x86_64
+
+Resources:
+  SiteRegistryTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Ref TableName
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: site_id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: site_id
+          KeyType: HASH
+
+  SiteRegistryApi:
+    Type: AWS::Serverless::HttpApi
+    Properties:
+      CorsConfiguration:
+        AllowMethods:
+          - GET
+          - POST
+          - PUT
+          - DELETE
+          - OPTIONS
+        AllowHeaders:
+          - Content-Type
+          - Authorization
+        AllowOrigins:
+          - !Ref CorsOrigin
+
+  SiteRegistryApiFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: powereye-site-registry-api
+      CodeUri: .
+      Handler: lambda_function.lambda_handler
+      Environment:
+        Variables:
+          TABLE_NAME: !Ref SiteRegistryTable
+          CORS_ORIGIN: !Ref CorsOrigin
+          API_TOKEN: !Ref ApiToken
+      Policies:
+        - Version: "2012-10-17"
+          Statement:
+            - Effect: Allow
+              Action:
+                - dynamodb:GetItem
+                - dynamodb:PutItem
+                - dynamodb:DeleteItem
+                - dynamodb:Scan
+              Resource: !GetAtt SiteRegistryTable.Arn
+      Events:
+        ListSites:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref SiteRegistryApi
+            Path: /sites
+            Method: GET
+        GetSite:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref SiteRegistryApi
+            Path: /sites/{site_id}
+            Method: GET
+        CreateSite:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref SiteRegistryApi
+            Path: /sites
+            Method: POST
+        UpdateSite:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref SiteRegistryApi
+            Path: /sites/{site_id}
+            Method: PUT
+        DeleteSite:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref SiteRegistryApi
+            Path: /sites/{site_id}
+            Method: DELETE
+        OptionsSites:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref SiteRegistryApi
+            Path: /sites
+            Method: OPTIONS
+        OptionsSiteById:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref SiteRegistryApi
+            Path: /sites/{site_id}
+            Method: OPTIONS
+
+Outputs:
+  ApiBaseUrl:
+    Description: Base URL for site registry API
+    Value: !Sub "https://${SiteRegistryApi}.execute-api.${AWS::Region}.amazonaws.com"
+  TableNameOut:
+    Description: DynamoDB site registry table name
+    Value: !Ref SiteRegistryTable

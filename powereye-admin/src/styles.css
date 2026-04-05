@@ -1,0 +1,111 @@
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: "Segoe UI", Tahoma, sans-serif;
+  background: #f6f8fb;
+  color: #10213f;
+}
+
+.container {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 20px;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.toolbar {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+input {
+  border: 1px solid #d4dcec;
+  border-radius: 8px;
+  padding: 8px 10px;
+}
+
+.btn,
+.btn-secondary,
+button {
+  border-radius: 8px;
+  padding: 8px 12px;
+  border: 1px solid transparent;
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.btn {
+  background: #0f5bd4;
+  color: #fff;
+}
+
+.btn-secondary {
+  background: #eef2fb;
+  color: #1d2e50;
+  border-color: #cad5ee;
+}
+
+.error {
+  color: #ba1e3a;
+}
+
+.table-wrap {
+  overflow-x: auto;
+  background: #fff;
+  border: 1px solid #dbe3f2;
+  border-radius: 10px;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+th,
+td {
+  padding: 10px;
+  border-bottom: 1px solid #e6ecf8;
+  text-align: left;
+}
+
+th {
+  background: #f2f6ff;
+}
+
+.actions {
+  display: flex;
+  gap: 8px;
+}
+
+.form {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 10px;
+  background: #fff;
+  border: 1px solid #dbe3f2;
+  border-radius: 10px;
+  padding: 14px;
+}
+
+.form label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 14px;
+}
+
+.checkbox {
+  flex-direction: row !important;
+  align-items: center;
+}
