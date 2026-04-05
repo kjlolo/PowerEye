@@ -38,6 +38,21 @@ export default function SiteDashboardPage() {
     loadData(siteId);
   }, [siteId]);
 
+  const getLatest = (field, fallback = "-") => {
+    for (let i = series.length - 1; i >= 0; i -= 1) {
+      const value = series[i][field];
+      if (value !== undefined && value !== null && !Number.isNaN(value)) return value;
+    }
+    return fallback;
+  };
+
+  const gridVoltage = getLatest("grid_voltage");
+  const gridPower = getLatest("grid_power");
+  const fuelPercent = getLatest("fuel_percent");
+  const fuelLiters = getLatest("fuel_liters");
+  const gensetOnline = getLatest("genset_online_count");
+  const batteryOnline = getLatest("battery_online_count");
+
   return (
     <div>
       <div className="topbar">
@@ -56,6 +71,30 @@ export default function SiteDashboardPage() {
         <div className="card"><h3>Firmware</h3><p>{latest?.fw_version || "-"}</p></div>
         <div className="card"><h3>Transport</h3><p>{latest?.transport_status || "-"}</p></div>
         <div className="card"><h3>Last Seen</h3><p>{latest?.last_seen_at || "-"}</p></div>
+      </div>
+
+      <div className="subsystem-grid">
+        <div className="card">
+          <h3>Grid</h3>
+          <p>Status: {typeof gridVoltage === "number" && gridVoltage > 0 ? "ONLINE" : "OFFLINE"}</p>
+          <p>Voltage: {typeof gridVoltage === "number" ? `${gridVoltage.toFixed(1)} V` : "-"}</p>
+          <p>Power: {typeof gridPower === "number" ? `${gridPower.toFixed(1)} W` : "-"}</p>
+        </div>
+        <div className="card">
+          <h3>Fuel</h3>
+          <p>Level: {typeof fuelPercent === "number" ? `${fuelPercent.toFixed(1)} %` : "-"}</p>
+          <p>Volume: {typeof fuelLiters === "number" ? `${fuelLiters.toFixed(1)} L` : "-"}</p>
+        </div>
+        <div className="card">
+          <h3>Generator</h3>
+          <p>Online Count: {gensetOnline}</p>
+          <p>Status: {typeof gensetOnline === "number" && gensetOnline > 0 ? "ONLINE" : "OFFLINE"}</p>
+        </div>
+        <div className="card">
+          <h3>Battery Banks</h3>
+          <p>Online Count: {batteryOnline}</p>
+          <p>Status: {typeof batteryOnline === "number" && batteryOnline > 0 ? "ONLINE" : "OFFLINE"}</p>
+        </div>
       </div>
 
       <div className="card">

@@ -22,6 +22,10 @@ export default function SiteListPage() {
   const [search, setSearch] = useState("");
   const [form, setForm] = useState(emptySite);
   const [editing, setEditing] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
+  const mqttCredentialsUrl = `${window.location.protocol}//${window.location.hostname}:18083/#/authentication`;
 
   const load = async () => {
     const { data } = await api.get("/sites", { params: { search } });
@@ -34,23 +38,67 @@ export default function SiteListPage() {
 
   const onSave = async (e) => {
     e.preventDefault();
+    setError("");
+    setNotice("");
+    if (!form.site_id?.trim()) {
+      setError("Site ID is required.");
+      return;
+    }
+    if (!form.site_name?.trim()) {
+      setError("Site Name is required.");
+      return;
+    }
+    if (!form.area_id?.trim()) {
+      setError("Area ID is required.");
+      return;
+    }
+    if (!form.region?.trim()) {
+      setError("Region is required.");
+      return;
+    }
     const payload = {
       ...form,
+      site_id: form.site_id.trim(),
+      site_name: form.site_name.trim(),
+      area_id: form.area_id.trim(),
+      region: form.region.trim(),
+      city: (form.city || "").trim(),
+      province: (form.province || "").trim(),
       lat: form.lat === "" ? null : Number(form.lat),
       lng: form.lng === "" ? null : Number(form.lng),
       criticality_weight: Number(form.criticality_weight || 1),
     };
-    if (editing) {
-      await api.put(`/sites/${form.site_id}`, payload);
-    } else {
-      await api.post("/sites", payload);
+    if ((form.lat !== "" && Number.isNaN(payload.lat)) || (form.lng !== "" && Number.isNaN(payload.lng))) {
+      setError("Latitude/Longitude must be valid numbers.");
+      return;
     }
-    setForm(emptySite);
-    setEditing(false);
-    await load();
+    setSaving(true);
+    try {
+      if (editing) {
+        await api.put(`/sites/${form.site_id}`, payload);
+        setNotice(`Updated site ${form.site_id}.`);
+      } else {
+        await api.post("/sites", payload);
+        setNotice(`Created site ${form.site_id}.`);
+      }
+      setForm(emptySite);
+      setEditing(false);
+      await load();
+    } catch (err) {
+      const detail = err?.response?.data?.detail;
+      if (detail === "site_exists") {
+        setError("Site ID already exists.");
+      } else {
+        setError(detail || err?.message || "Failed to save site.");
+      }
+    } finally {
+      setSaving(false);
+    }
   };
 
   const onEdit = (s) => {
+    setError("");
+    setNotice("");
     setForm({ ...s, lat: s.lat ?? "", lng: s.lng ?? "" });
     setEditing(true);
   };
@@ -68,22 +116,45 @@ export default function SiteListPage() {
         <div className="row">
           <input placeholder="Search site..." value={search} onChange={(e) => setSearch(e.target.value)} />
           <button onClick={load}>Refresh</button>
+          {isAdmin && (
+            <a href={mqttCredentialsUrl} target="_blank" rel="noreferrer">
+              <button type="button" className="secondary">Device Credentials</button>
+            </a>
+          )}
         </div>
       </div>
 
       {isAdmin && (
         <form className="card form-grid" onSubmit={onSave}>
           <h3>{editing ? "Edit Site" : "Create Site"}</h3>
-          <input placeholder="Site ID" value={form.site_id} disabled={editing} onChange={(e) => setForm({ ...form, site_id: e.target.value })} />
-          <input placeholder="Site Name" value={form.site_name} onChange={(e) => setForm({ ...form, site_name: e.target.value })} />
-          <input placeholder="Area ID" value={form.area_id} onChange={(e) => setForm({ ...form, area_id: e.target.value })} />
-          <input placeholder="Region" value={form.region} onChange={(e) => setForm({ ...form, region: e.target.value })} />
+          <input placeholder="Site ID" value={form.site_id} disabled={editing || saving} onChange={(e) => setForm({ ...form, site_id: e.target.value })} />
+          <input placeholder="Site Name" value={form.site_name} disabled={saving} onChange={(e) => setForm({ ...form, site_name: e.target.value })} />
+          <input placeholder="Area ID" value={form.area_id} disabled={saving} onChange={(e) => setForm({ ...form, area_id: e.target.value })} />
+          <input placeholder="Region" value={form.region} disabled={saving} onChange={(e) => setForm({ ...form, region: e.target.value })} />
           <input placeholder="City" value={form.city} onChange={(e) => setForm({ ...form, city: e.target.value })} />
           <input placeholder="Province" value={form.province} onChange={(e) => setForm({ ...form, province: e.target.value })} />
           <input placeholder="Latitude" value={form.lat} onChange={(e) => setForm({ ...form, lat: e.target.value })} />
           <input placeholder="Longitude" value={form.lng} onChange={(e) => setForm({ ...form, lng: e.target.value })} />
           <input placeholder="Criticality Weight" value={form.criticality_weight} onChange={(e) => setForm({ ...form, criticality_weight: e.target.value })} />
-          <button type="submit">{editing ? "Update" : "Create"}</button>
+          {error && <div className="danger">{error}</div>}
+          {notice && <div>{notice}</div>}
+          <div className="row">
+            <button type="submit" disabled={saving}>{saving ? "Saving..." : editing ? "Update" : "Create"}</button>
+            {editing && (
+              <button
+                type="button"
+                onClick={() => {
+                  setEditing(false);
+                  setForm(emptySite);
+                  setError("");
+                  setNotice("");
+                }}
+                disabled={saving}
+              >
+                Cancel
+              </button>
+            )}
+          </div>
         </form>
       )}
 

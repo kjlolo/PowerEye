@@ -38,8 +38,10 @@ input, select, button {
 }
 button { cursor: pointer; background: var(--accent); color: #111827; font-weight: 700; border-color: #f5ca2e; }
 button.danger { background: var(--danger); color: #fff; border-color: #dc2626; }
+button.secondary { background: #1c3568; color: var(--text); border-color: var(--line); }
 
 .form-grid { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+.subsystem-grid { display: grid; gap: 12px; grid-template-columns: repeat(2, minmax(260px, 1fr)); }
 table { width: 100%; border-collapse: collapse; }
 th, td { border-bottom: 1px solid var(--line); padding: 8px; text-align: left; }
 th { color: var(--accent); }
@@ -52,4 +54,5 @@ th { color: var(--accent); }
 @media (max-width: 920px) {
   .app { grid-template-columns: 1fr; }
   .sidebar { border-right: 0; border-bottom: 1px solid var(--line); }
+  .subsystem-grid { grid-template-columns: 1fr; }
 }
