@@ -41,6 +41,19 @@ button.danger { background: var(--danger); color: #fff; border-color: #dc2626; }
 button.secondary { background: #1c3568; color: var(--text); border-color: var(--line); }
 
 .form-grid { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+.form-table { display: grid; gap: 10px; }
+.form-row {
+  display: grid;
+  grid-template-columns: 170px 1fr;
+  align-items: center;
+  gap: 10px;
+}
+.form-row span {
+  color: var(--muted);
+  font-size: 14px;
+}
+.form-status { padding: 2px 0; }
+.form-actions { margin-top: 6px; }
 .subsystem-grid { display: grid; gap: 12px; grid-template-columns: repeat(2, minmax(260px, 1fr)); }
 .text-danger { color: #fecaca; }
 .modal-backdrop {
@@ -70,4 +83,5 @@ th { color: var(--accent); }
   .app { grid-template-columns: 1fr; }
   .sidebar { border-right: 0; border-bottom: 1px solid var(--line); }
   .subsystem-grid { grid-template-columns: 1fr; }
+  .form-row { grid-template-columns: 1fr; }
 }

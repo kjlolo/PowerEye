@@ -85,7 +85,8 @@ export default function SiteListPage() {
       setForm(emptySite);
       setEditing(false);
       setShowModal(false);
-      await load();
+      setSearch("");
+      await load("");
     } catch (err) {
       const detail = err?.response?.data?.detail;
       if (detail === "site_exists") {
@@ -149,20 +150,47 @@ export default function SiteListPage() {
       {isAdmin && showModal && (
         <div className="modal-backdrop" onClick={() => !saving && setShowModal(false)}>
           <div className="card modal-card" onClick={(e) => e.stopPropagation()}>
-            <form className="form-grid" onSubmit={onSave}>
+            <form className="form-table" onSubmit={onSave}>
               <h3>{editing ? "Edit Site" : "Create Site"}</h3>
-              <input placeholder="Site ID" value={form.site_id} disabled={editing || saving} onChange={(e) => setForm({ ...form, site_id: e.target.value })} />
-              <input placeholder="Site Name" value={form.site_name} disabled={saving} onChange={(e) => setForm({ ...form, site_name: e.target.value })} />
-              <input placeholder="Area ID" value={form.area_id} disabled={saving} onChange={(e) => setForm({ ...form, area_id: e.target.value })} />
-              <input placeholder="Region" value={form.region} disabled={saving} onChange={(e) => setForm({ ...form, region: e.target.value })} />
-              <input placeholder="City" value={form.city} onChange={(e) => setForm({ ...form, city: e.target.value })} />
-              <input placeholder="Province" value={form.province} onChange={(e) => setForm({ ...form, province: e.target.value })} />
-              <input placeholder="Latitude" value={form.lat} onChange={(e) => setForm({ ...form, lat: e.target.value })} />
-              <input placeholder="Longitude" value={form.lng} onChange={(e) => setForm({ ...form, lng: e.target.value })} />
-              <input placeholder="Criticality Weight" value={form.criticality_weight} onChange={(e) => setForm({ ...form, criticality_weight: e.target.value })} />
-              {error && <div className="text-danger">{error}</div>}
-              {notice && <div>{notice}</div>}
-              <div className="row">
+              <label className="form-row">
+                <span>Site ID</span>
+                <input value={form.site_id} disabled={editing || saving} onChange={(e) => setForm({ ...form, site_id: e.target.value })} />
+              </label>
+              <label className="form-row">
+                <span>Site Name</span>
+                <input value={form.site_name} disabled={saving} onChange={(e) => setForm({ ...form, site_name: e.target.value })} />
+              </label>
+              <label className="form-row">
+                <span>Area ID</span>
+                <input value={form.area_id} disabled={saving} onChange={(e) => setForm({ ...form, area_id: e.target.value })} />
+              </label>
+              <label className="form-row">
+                <span>Region</span>
+                <input value={form.region} disabled={saving} onChange={(e) => setForm({ ...form, region: e.target.value })} />
+              </label>
+              <label className="form-row">
+                <span>City</span>
+                <input value={form.city} onChange={(e) => setForm({ ...form, city: e.target.value })} />
+              </label>
+              <label className="form-row">
+                <span>Province</span>
+                <input value={form.province} onChange={(e) => setForm({ ...form, province: e.target.value })} />
+              </label>
+              <label className="form-row">
+                <span>Latitude</span>
+                <input value={form.lat} onChange={(e) => setForm({ ...form, lat: e.target.value })} />
+              </label>
+              <label className="form-row">
+                <span>Longitude</span>
+                <input value={form.lng} onChange={(e) => setForm({ ...form, lng: e.target.value })} />
+              </label>
+              <label className="form-row">
+                <span>Criticality Weight</span>
+                <input value={form.criticality_weight} onChange={(e) => setForm({ ...form, criticality_weight: e.target.value })} />
+              </label>
+              {error && <div className="text-danger form-status">{error}</div>}
+              {notice && <div className="form-status">{notice}</div>}
+              <div className="row form-actions">
                 <button type="submit" disabled={saving}>{saving ? "Saving..." : editing ? "Update" : "Create"}</button>
                 <button
                   type="button"
