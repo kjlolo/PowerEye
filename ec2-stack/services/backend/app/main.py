@@ -1,6 +1,7 @@
 from datetime import datetime, timezone
 from fastapi import Depends, FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.encoders import jsonable_encoder
 from sqlalchemy.orm import Session
 from influxdb_client.client.flux_table import FluxRecord
 
@@ -130,7 +131,23 @@ def list_sites(
     if region:
         q = q.filter(Site.region == region)
     sites = q.order_by(Site.site_id.asc()).all()
-    return {"ok": True, "items": sites, "count": len(sites), "viewer": user.email}
+    items = [
+        {
+            "site_id": s.site_id,
+            "site_name": s.site_name,
+            "area_id": s.area_id,
+            "region": s.region,
+            "city": s.city,
+            "province": s.province,
+            "lat": s.lat,
+            "lng": s.lng,
+            "criticality_weight": s.criticality_weight,
+            "is_active": s.is_active,
+            "updated_at": s.updated_at,
+        }
+        for s in sites
+    ]
+    return {"ok": True, "items": jsonable_encoder(items), "count": len(items), "viewer": user.email}
 
 
 @app.post("/sites")
