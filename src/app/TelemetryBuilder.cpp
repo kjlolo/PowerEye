@@ -45,33 +45,48 @@ String TelemetryBuilder::buildJson(const TelemetrySnapshot& snapshot, bool compl
   }
 
   bool batteryAvailable = false;
+  bool batteryDischarging = false;
   uint8_t batteryOnlineCount = 0;
   uint8_t batteryLowSocCount = 0;
+  uint8_t batteryDischargingCount = 0;
+  uint8_t batteryChargingCount = 0;
   for (uint8_t i = 0; i < batteryCount; ++i) {
     const BatteryData& b = snapshot.batteryBanks[i];
     if (b.online) {
       ++batteryOnlineCount;
       batteryAvailable = true;
+      if (b.packCurrent < -0.2f) {
+        batteryDischarging = true;
+        ++batteryDischargingCount;
+      } else if (b.packCurrent > 0.2f) {
+        ++batteryChargingCount;
+      }
       if (b.soc <= 20.0f) {
         ++batteryLowSocCount;
       }
     }
   }
 
-  const bool sitePowerAvailable = gridAvailable || gensetAvailable || batteryAvailable;
+  const bool sitePowerAvailable = gridAvailable || gensetAvailable || batteryDischarging;
   const char* powerSource = "none";
   if (gridAvailable) {
     powerSource = "grid";
   } else if (gensetAvailable) {
     powerSource = "genset";
-  } else if (batteryAvailable) {
+  } else if (batteryDischarging) {
     powerSource = "battery";
   }
   doc["site_power_available"] = sitePowerAvailable;
   doc["power_source"] = powerSource;
+  doc["power_supply_grid"] = (strcmp(powerSource, "grid") == 0);
+  doc["power_supply_genset"] = (strcmp(powerSource, "genset") == 0);
+  doc["power_supply_battery"] = (strcmp(powerSource, "battery") == 0);
   doc["genset_online_count"] = gensetOnlineCount;
   doc["genset_any_alarm"] = gensetAnyAlarm;
   doc["battery_online_count"] = batteryOnlineCount;
+  doc["battery_discharging_count"] = batteryDischargingCount;
+  doc["battery_charging_count"] = batteryChargingCount;
+  doc["battery_discharging_active"] = batteryDischarging;
   doc["battery_low_soc_count"] = batteryLowSocCount;
 
   JsonObject energy = doc["energy"].to<JsonObject>();

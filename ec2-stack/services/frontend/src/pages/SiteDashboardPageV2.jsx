@@ -32,10 +32,12 @@ const FIELD_LABELS = {
   fuel_liters: "Fuel (L)",
   genset_online_count: "Genset Online",
   battery_online_count: "Battery Online",
-  network_online: "Network Online",
+  battery_discharging_count: "Battery Discharging",
+  battery_charging_count: "Battery Charging",
+  power_supply_grid: "Grid Supplying",
+  power_supply_genset: "Genset Supplying",
+  power_supply_battery: "Battery Supplying",
   site_power_available: "Power Available",
-  queue_pending: "Queue Pending",
-  rssi: "RSSI",
 };
 
 const FIELD_COLORS = {
@@ -49,10 +51,12 @@ const FIELD_COLORS = {
   fuel_liters: "#22c55e",
   genset_online_count: "#a78bfa",
   battery_online_count: "#60a5fa",
-  network_online: "#43d68c",
+  battery_discharging_count: "#f97316",
+  battery_charging_count: "#22c55e",
+  power_supply_grid: "#43d68c",
+  power_supply_genset: "#a78bfa",
+  power_supply_battery: "#f97316",
   site_power_available: "#facc15",
-  queue_pending: "#fca5a5",
-  rssi: "#67e8f9",
 };
 
 const TREND_GROUPS = {
@@ -60,7 +64,7 @@ const TREND_GROUPS = {
   fuel: ["fuel_percent", "fuel_liters"],
   generator: ["genset_online_count"],
   batteries: ["battery_online_count"],
-  availability: ["network_online", "site_power_available", "queue_pending", "rssi"],
+  availability: ["power_supply_grid", "power_supply_genset", "power_supply_battery", "site_power_available"],
 };
 
 function defaultConfigForm() {
