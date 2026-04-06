@@ -117,6 +117,20 @@ export default function OtaPage() {
     }
   };
 
+  const deleteRelease = async (version) => {
+    try {
+      setBusy(true);
+      setMessage(`Deleting release ${version}...`);
+      await api.delete(`/ota/firmware/${encodeURIComponent(version)}`);
+      setMessage(`Release ${version} deleted.`);
+      await load();
+    } catch (err) {
+      setMessage(err?.response?.data?.detail || err?.message || "Failed to delete firmware release.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const loadReports = async (id) => {
     setSelectedJobId(id);
     const { data } = await api.get(`/ota/jobs/${id}/reports`);
@@ -210,6 +224,7 @@ export default function OtaPage() {
               <th>Size</th>
               <th>Created</th>
               <th>Notes</th>
+              <th>Actions</th>
             </tr>
           </thead>
           <tbody>
@@ -220,6 +235,16 @@ export default function OtaPage() {
                 <td>{formatBytes(r.size_bytes)}</td>
                 <td>{r.created_at ? new Date(r.created_at).toLocaleString() : "-"}</td>
                 <td>{r.notes || "-"}</td>
+                <td>
+                  <button
+                    type="button"
+                    className="danger"
+                    disabled={busy}
+                    onClick={() => deleteRelease(r.version)}
+                  >
+                    Delete
+                  </button>
+                </td>
               </tr>
             ))}
           </tbody>

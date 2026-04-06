@@ -55,6 +55,17 @@ def get_s3_object_meta(s3_key: str) -> dict | None:
         raise
 
 
+def delete_s3_object_if_exists(s3_key: str) -> None:
+    s3 = _get_s3_client()
+    try:
+        s3.delete_object(Bucket=settings.s3_firmware_bucket, Key=s3_key)
+    except ClientError as e:
+        code = str((e.response or {}).get("Error", {}).get("Code", ""))
+        if code in {"404", "NoSuchKey", "NotFound"}:
+            return
+        raise
+
+
 def write_audit(db: Session, actor: str, action: str, object_type: str, object_id: str = "", detail: str = "") -> None:
     db.add(AuditLog(actor=actor, action=action, object_type=object_type, object_id=object_id, detail=detail))
     db.commit()

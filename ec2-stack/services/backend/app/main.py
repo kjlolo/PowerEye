@@ -36,6 +36,7 @@ from .schemas import (
 from .security import create_access_token, create_refresh_token, decode_token, hash_password, verify_password
 from .services import (
     assign_ota_targets,
+    delete_s3_object_if_exists,
     get_s3_object_meta,
     get_influx_client,
     make_presigned_get_url,
@@ -733,7 +734,10 @@ def create_firmware_release(payload: FirmwareReleaseIn, user: User = Depends(req
     if exists:
         raise HTTPException(status_code=409, detail="version_exists")
     key = f"firmware/{payload.version}/{payload.filename}"
-    upload_url = make_presigned_put_url(key)
+    try:
+        upload_url = make_presigned_put_url(key)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"s3_presign_failed: {e}")
     rel = FirmwareRelease(
         version=payload.version,
         s3_key=key,
@@ -749,11 +753,17 @@ def create_firmware_release(payload: FirmwareReleaseIn, user: User = Depends(req
 
 
 @app.get("/ota/firmware")
-def list_firmware(user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> dict:
+def list_firmware(user: User = Depends(require_role("admin")), db: Session = Depends(get_db)) -> dict:
     rows = db.query(FirmwareRelease).order_by(FirmwareRelease.created_at.desc()).all()
     items: list[dict] = []
     for rel in rows:
-        meta = get_s3_object_meta(rel.s3_key)
+        try:
+            meta = get_s3_object_meta(rel.s3_key)
+        except Exception as e:
+            meta = None
+            s3_error = str(e)
+        else:
+            s3_error = ""
         items.append(
             {
                 "id": rel.id,
@@ -766,17 +776,21 @@ def list_firmware(user: User = Depends(get_current_user), db: Session = Depends(
                 "uploaded": bool(meta),
                 "size_bytes": int(meta["size_bytes"]) if meta else 0,
                 "uploaded_at": meta["last_modified"] if meta else None,
+                "s3_error": s3_error,
             }
         )
     return {"ok": True, "items": items, "count": len(items), "viewer": user.email}
 
 
 @app.get("/ota/firmware/{version}/upload-status")
-def ota_firmware_upload_status(version: str, user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> dict:
+def ota_firmware_upload_status(version: str, user: User = Depends(require_role("admin")), db: Session = Depends(get_db)) -> dict:
     rel = db.query(FirmwareRelease).filter(FirmwareRelease.version == version).first()
     if not rel:
         raise HTTPException(status_code=404, detail="firmware_not_found")
-    meta = get_s3_object_meta(rel.s3_key)
+    try:
+        meta = get_s3_object_meta(rel.s3_key)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"s3_head_failed: {e}")
     return {
         "ok": True,
         "version": version,
@@ -794,8 +808,13 @@ def create_ota_job(payload: OtaJobIn, user: User = Depends(require_role("admin")
     release = db.query(FirmwareRelease).filter(FirmwareRelease.version == payload.firmware_version).first()
     if not release:
         raise HTTPException(status_code=404, detail="firmware_not_found")
-    if not get_s3_object_meta(release.s3_key):
-        raise HTTPException(status_code=400, detail="firmware_binary_not_uploaded")
+    try:
+        if not get_s3_object_meta(release.s3_key):
+            raise HTTPException(status_code=400, detail="firmware_binary_not_uploaded")
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"s3_head_failed: {e}")
     job = OtaJob(
         firmware_version=payload.firmware_version,
         target_scope=payload.target_scope,
@@ -813,7 +832,7 @@ def create_ota_job(payload: OtaJobIn, user: User = Depends(require_role("admin")
 
 
 @app.get("/ota/jobs")
-def list_ota_jobs(user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> dict:
+def list_ota_jobs(user: User = Depends(require_role("admin")), db: Session = Depends(get_db)) -> dict:
     items = db.query(OtaJob).order_by(OtaJob.created_at.desc()).all()
     out = []
     for job in items:
@@ -824,7 +843,7 @@ def list_ota_jobs(user: User = Depends(get_current_user), db: Session = Depends(
 
 
 @app.get("/ota/jobs/{job_id}")
-def get_ota_job(job_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> dict:
+def get_ota_job(job_id: int, user: User = Depends(require_role("admin")), db: Session = Depends(get_db)) -> dict:
     job = db.query(OtaJob).filter(OtaJob.id == job_id).first()
     if not job:
         raise HTTPException(status_code=404, detail="job_not_found")
@@ -833,7 +852,7 @@ def get_ota_job(job_id: int, user: User = Depends(get_current_user), db: Session
 
 
 @app.get("/ota/jobs/{job_id}/reports")
-def get_ota_job_reports(job_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> dict:
+def get_ota_job_reports(job_id: int, user: User = Depends(require_role("admin")), db: Session = Depends(get_db)) -> dict:
     job = db.query(OtaJob).filter(OtaJob.id == job_id).first()
     if not job:
         raise HTTPException(status_code=404, detail="job_not_found")
@@ -850,6 +869,27 @@ def cancel_ota_job(job_id: int, user: User = Depends(require_role("admin")), db:
     db.commit()
     write_audit(db, user.email, "ota.job.cancel", "ota_job", str(job_id))
     return {"ok": True, "item": job}
+
+
+@app.delete("/ota/firmware/{version}")
+def delete_firmware_release(version: str, user: User = Depends(require_role("admin")), db: Session = Depends(get_db)) -> dict:
+    rel = db.query(FirmwareRelease).filter(FirmwareRelease.version == version).first()
+    if not rel:
+        raise HTTPException(status_code=404, detail="firmware_not_found")
+
+    jobs_count = db.query(OtaJob).filter(OtaJob.firmware_version == version).count()
+    if jobs_count > 0:
+        raise HTTPException(status_code=409, detail="firmware_in_use_by_ota_jobs")
+
+    try:
+        delete_s3_object_if_exists(rel.s3_key)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"s3_delete_failed: {e}")
+
+    db.delete(rel)
+    db.commit()
+    write_audit(db, user.email, "ota.release.delete", "firmware_release", version)
+    return {"ok": True, "version": version}
 
 
 @app.get("/ota/check")
