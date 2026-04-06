@@ -83,6 +83,38 @@ namespace {
     return GeneratorModel::NONE;
   }
 
+  bool isGridAvailableFromPzem(const DeviceConfig& config, const EnergyData& energy) {
+    if (!config.rs485.pzemEnabled) {
+      return false;
+    }
+    return energy.online && energy.voltage > 150.0f;
+  }
+
+  bool isGensetRunningFromModule(const GensetData& g) {
+    if (!g.online) {
+      return false;
+    }
+    if (g.activePowerKw > 0.2f || g.speedRpm > 200.0f) {
+      return true;
+    }
+    if (g.generatorLoad || g.generatorState != 0) {
+      return true;
+    }
+    return false;
+  }
+
+  bool isGensetFailureFromModule(const GensetData& g) {
+    if (!g.online) {
+      return false;
+    }
+    return g.commonAlarm ||
+           g.commonShutdown ||
+           g.failedToStartShutdown ||
+           g.overSpeedShutdown ||
+           g.lowOilPressureShutdown ||
+           g.highEngineTemperatureShutdown;
+  }
+
 }
 
 SiteController::SiteController()
@@ -149,6 +181,39 @@ void SiteController::update() {
     result += "\"response\":\"" + jsonEscape(responseBody) + "\"";
     result += "}";
     _webUi.setAwsTestResult(result);
+  }
+  if (_webUi.consumeMqttTestRequest()) {
+    bool ok = false;
+    String reason;
+    if (!_config.cloud.mqttEnabled) {
+      reason = "mqtt_disabled";
+    } else if (_config.cloud.mqttHost.isEmpty()) {
+      reason = "mqtt_host_missing";
+    } else if (_config.cloud.mqttTelemetryTopic.isEmpty()) {
+      reason = "mqtt_topic_missing";
+    } else {
+      String probePayload = "{";
+      probePayload += "\"type\":\"mqtt_test\",";
+      probePayload += "\"site_id\":\"" + jsonEscape(_config.identity.siteId) + "\",";
+      probePayload += "\"device_id\":\"" + jsonEscape(_config.identity.deviceId) + "\",";
+      probePayload += "\"ts_ms\":" + String(millis());
+      probePayload += "}";
+      ok = _mqtt.publish(_config.cloud, probePayload);
+      reason = ok ? "success" : "publish_failed";
+    }
+    String result = "{";
+    result += "\"ok\":" + String(ok ? "true" : "false") + ",";
+    result += "\"reason\":\"" + jsonEscape(reason) + "\",";
+    result += "\"modem_error\":\"" + jsonEscape(_modem.lastError()) + "\",";
+    result += "\"mqtt_enabled\":" + String(_config.cloud.mqttEnabled ? "true" : "false") + ",";
+    result += "\"mqtt_host\":\"" + jsonEscape(_config.cloud.mqttHost) + "\",";
+    result += "\"mqtt_port\":" + String(_config.cloud.mqttPort) + ",";
+    result += "\"mqtt_tls\":" + String(_config.cloud.mqttTls ? "true" : "false") + ",";
+    result += "\"mqtt_topic\":\"" + jsonEscape(_config.cloud.mqttTelemetryTopic) + "\",";
+    result += "\"mqtt_client_id\":\"" + jsonEscape(_config.cloud.mqttClientId) + "\",";
+    result += "\"mqtt_username\":\"" + jsonEscape(_config.cloud.mqttUsername) + "\"";
+    result += "}";
+    _webUi.setMqttTestResult(result);
   }
   handlePolling();
   updateSnapshot();
@@ -279,6 +344,30 @@ void SiteController::updateSnapshot() {
   _snapshot.fuel = _fuel.data();
   _snapshot.alarms = _alarmManager.current();
 
+  // Alarm source mapping:
+  // - AC mains alarm from PZEM/grid state.
+  // - Genset run/fail alarms from genset module data.
+  // Other digital alarms (theft/door/etc.) remain from digital inputs.
+  const bool hasConfiguredGenset = _config.rs485.generatorEnabled &&
+                                   selectedGeneratorModel(_config) != GeneratorModel::NONE;
+  if (_config.rs485.pzemEnabled) {
+    _snapshot.alarms.acMains = !isGridAvailableFromPzem(_config, _snapshot.energy);
+  }
+  if (hasConfiguredGenset) {
+    bool gensetRun = false;
+    bool gensetFail = false;
+    const uint8_t count = _snapshot.gensetCountConfigured > Rs485Config::MAX_GENERATORS
+      ? Rs485Config::MAX_GENERATORS
+      : _snapshot.gensetCountConfigured;
+    for (uint8_t i = 0; i < count; ++i) {
+      const GensetData& g = _snapshot.gensets[i];
+      gensetRun = gensetRun || isGensetRunningFromModule(g);
+      gensetFail = gensetFail || isGensetFailureFromModule(g);
+    }
+    _snapshot.alarms.gensetRun = gensetRun;
+    _snapshot.alarms.gensetFail = gensetFail;
+  }
+
   if (!_config.rs485.pzemEnabled) {
     _snapshot.energy.online = false;
   }
@@ -315,10 +404,16 @@ void SiteController::handlePublishing() {
     _lastRetry = now;
     const PublishResult result = _publishManager.process(_snapshot.networkOnline);
     if (result == PublishResult::SUCCESS) {
-      Serial.printf("[PUBLISH] HTTP %d %s\n", _publishManager.lastHttpCode(), _publishManager.lastResponse().c_str());
+      Serial.printf("[PUBLISH] transport=%s http_code=%d response=%s\n",
+                    _publishManager.lastTransport().c_str(),
+                    _publishManager.lastHttpCode(),
+                    _publishManager.lastResponse().c_str());
       _lastTransportStatus = _publishManager.lastTransport();
       _lastPublishError = "";
     } else if (result == PublishResult::FAILED) {
+      Serial.printf("[PUBLISH] FAILED transport=%s modem_error=%s\n",
+                    _publishManager.lastTransport().c_str(),
+                    _modem.lastError().c_str());
       _lastTransportStatus = _publishManager.lastTransport();
       _lastPublishError = _modem.lastError();
     }
