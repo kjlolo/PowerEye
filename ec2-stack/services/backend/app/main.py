@@ -578,35 +578,42 @@ from(bucket: "{settings.influxdb_bucket}")
                 }
             )
 
-    events: list[dict] = []
+    historical: list[dict] = []
+    active_alarms: list[dict] = []
     for field, rows in by_field.items():
         if not rows:
             continue
         rows.sort(key=lambda x: x["time"])
-        previous: bool | None = None
+        in_alarm = False
+        alarm_start: datetime | None = None
         for row in rows:
             current = bool(row["value"])
-            if previous is None and current:
-                events.append(
+            ts = row["time"]
+            if (not in_alarm) and current:
+                in_alarm = True
+                alarm_start = ts
+            elif in_alarm and (not current):
+                historical.append(
                     {
-                        "time": row["time"].isoformat(),
+                        "alarm_time": alarm_start.isoformat() if alarm_start else ts.isoformat(),
+                        "clear_time": ts.isoformat(),
                         "alarm_key": field,
                         "alarm_label": ALARM_FIELDS[field],
                         "severity": ALARM_SEVERITY.get(field, "major"),
-                        "state": "active",
                     }
                 )
-            elif previous is not None and current != previous:
-                events.append(
-                    {
-                        "time": row["time"].isoformat(),
-                        "alarm_key": field,
-                        "alarm_label": ALARM_FIELDS[field],
-                        "severity": ALARM_SEVERITY.get(field, "major"),
-                        "state": "active" if current else "cleared",
-                    }
-                )
-            previous = current
+                in_alarm = False
+                alarm_start = None
+        if in_alarm:
+            active_alarms.append(
+                {
+                    "alarm_time": alarm_start.isoformat() if alarm_start else rows[-1]["time"].isoformat(),
+                    "alarm_key": field,
+                    "alarm_label": ALARM_FIELDS[field],
+                    "severity": ALARM_SEVERITY.get(field, "major"),
+                    "active": True,
+                }
+            )
 
     active_map: dict[str, bool] = {}
     for table in active_tables:
@@ -614,25 +621,17 @@ from(bucket: "{settings.influxdb_bucket}")
             field = str(rec.get_field())
             if field in ALARM_FIELDS:
                 active_map[field] = bool(rec.get_value())
-
-    active_alarms = [
-        {
-            "alarm_key": field,
-            "alarm_label": ALARM_FIELDS[field],
-            "active": bool(active_map.get(field, False)),
-            "severity": ALARM_SEVERITY.get(field, "major"),
-        }
-        for field in ALARM_FIELDS.keys()
-    ]
-
-    events.sort(key=lambda x: x["time"], reverse=True)
+    # Keep only alarms that are currently active in latest point.
+    active_alarms = [a for a in active_alarms if bool(active_map.get(a["alarm_key"], False))]
+    historical.sort(key=lambda x: x["clear_time"], reverse=True)
+    active_alarms.sort(key=lambda x: x["alarm_time"], reverse=True)
 
     return {
         "ok": True,
         "site_id": site_id,
         "active_alarms": active_alarms,
-        "history": events,
-        "count": len(events),
+        "history": historical,
+        "count": len(historical),
         "viewer": user.email,
     }
 

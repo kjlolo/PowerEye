@@ -398,7 +398,7 @@ export default function SiteDashboardPageV2() {
   const batterySupplying = !!values.power_supply_battery;
   const gridSupplying = !!values.power_supply_grid;
   const gensetSupplying = !!values.power_supply_genset;
-  const activeAlarmCount = (events.active_alarms || []).filter((a) => a.active).length;
+  const activeAlarmCount = (events.active_alarms || []).length;
   const criticalAlarmCount = (events.active_alarms || []).filter((a) => a.active && a.severity === "critical").length;
 
   const gridCardState = gridOnline ? "ok" : "fault";
@@ -694,16 +694,30 @@ export default function SiteDashboardPageV2() {
         <>
           <div className="section-title">Active Alarms</div>
           <div className="card">
-            <div className="alarm-chip-row">
-              {(events.active_alarms || []).filter((a) => a.active).map((a) => (
-                <span key={a.alarm_key} className={`status-chip ${a.active ? "warn" : "online"}`}>
-                  [{String(a.severity || "major").toUpperCase()}] {a.alarm_label}: ACTIVE
-                </span>
-              ))}
-              {(events.active_alarms || []).filter((a) => a.active).length === 0 ? (
-                <span className="meta-line">No active alarms.</span>
-              ) : null}
-            </div>
+            <table>
+              <thead>
+                <tr>
+                  <th>Alarm</th>
+                  <th>Severity</th>
+                  <th>Alarm Time</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(events.active_alarms || []).length === 0 ? (
+                  <tr>
+                    <td colSpan={3}>No active alarms.</td>
+                  </tr>
+                ) : (
+                  (events.active_alarms || []).map((a) => (
+                    <tr key={`active-${a.alarm_key}-${a.alarm_time}`}>
+                      <td>{a.alarm_label}</td>
+                      <td>{String(a.severity || "major").toUpperCase()}</td>
+                      <td>{formatBrowserDateTime(a.alarm_time)}</td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
             <div className="row form-actions">
               <button type="button" className="secondary" onClick={() => loadEvents(siteId)}>Refresh Events</button>
             </div>
@@ -714,24 +728,24 @@ export default function SiteDashboardPageV2() {
             <table>
               <thead>
                 <tr>
-                  <th>Timestamp</th>
                   <th>Alarm</th>
                   <th>Severity</th>
-                  <th>State</th>
+                  <th>Alarm Time</th>
+                  <th>Clear Time</th>
                 </tr>
               </thead>
               <tbody>
                 {(events.history || []).length === 0 ? (
                   <tr>
-                    <td colSpan={4}>No alarm events for selected date range.</td>
+                    <td colSpan={4}>No cleared alarms for selected date range.</td>
                   </tr>
                 ) : (
                   (events.history || []).map((evt, idx) => (
-                    <tr key={`${evt.alarm_key}-${evt.time}-${idx}`}>
-                      <td>{formatBrowserDateTime(evt.time)}</td>
+                    <tr key={`${evt.alarm_key}-${evt.alarm_time}-${evt.clear_time}-${idx}`}>
                       <td>{evt.alarm_label}</td>
                       <td>{String(evt.severity || "major").toUpperCase()}</td>
-                      <td>{evt.state.toUpperCase()}</td>
+                      <td>{formatBrowserDateTime(evt.alarm_time)}</td>
+                      <td>{formatBrowserDateTime(evt.clear_time)}</td>
                     </tr>
                   ))
                 )}
