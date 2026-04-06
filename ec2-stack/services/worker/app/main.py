@@ -59,15 +59,71 @@ def write_telemetry(site_id: str, device_id: str, data: dict) -> None:
 
     energy = data.get("energy", {}) if isinstance(data.get("energy"), dict) else {}
     fuel = data.get("fuel", {}) if isinstance(data.get("fuel"), dict) else {}
+    gensets = data.get("gensets", []) if isinstance(data.get("gensets"), list) else []
+    battery_banks = data.get("battery_banks", []) if isinstance(data.get("battery_banks"), list) else []
 
     point.field("grid_voltage", float(energy.get("voltage", 0.0) or 0.0))
+    point.field("grid_current", float(energy.get("current", 0.0) or 0.0))
     point.field("grid_power", float(energy.get("power", 0.0) or 0.0))
+    point.field("grid_frequency", float(energy.get("frequency", 0.0) or 0.0))
+    point.field("grid_power_factor", float(energy.get("power_factor", 0.0) or 0.0))
+    point.field("grid_energy_kwh", float(energy.get("energy_kwh", 0.0) or 0.0))
+    point.field("grid_online", bool(energy.get("online", False)))
     point.field("fuel_percent", float(fuel.get("percent", 0.0) or 0.0))
     point.field("fuel_liters", float(fuel.get("liters", 0.0) or 0.0))
+    point.field("fuel_raw", int(fuel.get("raw", 0) or 0))
+    point.field("fuel_online", bool(fuel.get("online", False)))
+    point.field("fuel_sensor_online", bool(data.get("fuel_sensor_online", False)))
     point.field("genset_online_count", int(data.get("genset_online_count", 0) or 0))
+    point.field("genset_any_alarm", bool(data.get("genset_any_alarm", False)))
+    point.field("genset_count_configured", int(data.get("genset_count_configured", 0) or 0))
     point.field("battery_online_count", int(data.get("battery_online_count", 0) or 0))
+    point.field("battery_bank_count_configured", int(data.get("battery_bank_count_configured", 0) or 0))
+    point.field("battery_low_soc_count", int(data.get("battery_low_soc_count", 0) or 0))
     point.field("network_online", bool(data.get("network_online", False)))
     point.field("site_power_available", bool(data.get("site_power_available", False)))
+    point.field("queue_pending", int(data.get("queue_pending", 0) or 0))
+    point.field("rssi", int(data.get("rssi", -113) or -113))
+    point.field("power_source", str(data.get("power_source", "") or ""))
+
+    # Primary generator details (first online; fallback first configured).
+    primary_gen = None
+    for g in gensets:
+        if isinstance(g, dict) and bool(g.get("online", False)):
+            primary_gen = g
+            break
+    if primary_gen is None and gensets and isinstance(gensets[0], dict):
+        primary_gen = gensets[0]
+    if isinstance(primary_gen, dict):
+        point.field("genset_mode", str(primary_gen.get("mode", "") or ""))
+        point.field("genset_alarm", bool(primary_gen.get("alarm", False)))
+        point.field("genset_voltage", float(primary_gen.get("voltage_a", 0.0) or 0.0))
+        point.field("genset_battery_voltage", float(primary_gen.get("battery_voltage", 0.0) or 0.0))
+        point.field("genset_current", float(primary_gen.get("current_a", 0.0) or 0.0))
+        point.field("genset_run_hours", int(primary_gen.get("run_hours", 0) or 0))
+
+    # Battery per-rectifier summary (4 banks per rectifier, up to RS1..RS4).
+    rs_online = {1: 0, 2: 0, 3: 0, 4: 0}
+    rs_soc_sum = {1: 0.0, 2: 0.0, 3: 0.0, 4: 0.0}
+    rs_soc_count = {1: 0, 2: 0, 3: 0, 4: 0}
+    for b in battery_banks:
+        if not isinstance(b, dict):
+            continue
+        index = int(b.get("index", 0) or 0)
+        if index < 1:
+            continue
+        rs = min(4, ((index - 1) // 4) + 1)
+        online = bool(b.get("online", False))
+        if online:
+            rs_online[rs] += 1
+        soc = float(b.get("soc", 0.0) or 0.0)
+        if online:
+            rs_soc_sum[rs] += soc
+            rs_soc_count[rs] += 1
+    for rs in [1, 2, 3, 4]:
+        point.field(f"rs{rs}_online_count", rs_online[rs])
+        avg_soc = (rs_soc_sum[rs] / rs_soc_count[rs]) if rs_soc_count[rs] > 0 else 0.0
+        point.field(f"rs{rs}_avg_soc", float(avg_soc))
 
     write_api.write(bucket=settings.influxdb_bucket, org=settings.influxdb_org, record=point)
 

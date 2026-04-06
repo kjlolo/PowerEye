@@ -78,6 +78,14 @@ th { color: var(--accent); }
 .login-card { width: min(420px, 94vw); display: grid; gap: 8px; }
 .loading { padding: 30px; }
 .error { color: #fca5a5; margin: 0; }
+.status-online {
+  color: #4ade80;
+  font-weight: 700;
+}
+.status-offline {
+  color: #f87171;
+  font-weight: 700;
+}
 
 @media (max-width: 920px) {
   .app { grid-template-columns: 1fr; }
