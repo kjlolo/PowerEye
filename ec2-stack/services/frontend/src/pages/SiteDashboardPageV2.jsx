@@ -175,13 +175,7 @@ export default function SiteDashboardPageV2() {
   const now = new Date();
   const [trendStart, setTrendStart] = useState(toDatetimeLocalInput(new Date(now.getTime() - 24 * 60 * 60 * 1000)));
   const [trendEnd, setTrendEnd] = useState(toDatetimeLocalInput(now));
-  const [trendInfo, setTrendInfo] = useState({
-    requestedStart: "",
-    requestedEnd: "",
-    returnedStart: "",
-    returnedEnd: "",
-    points: 0,
-  });
+  const [trendApplied, setTrendApplied] = useState({ start: "", end: "", seq: 0 });
   const [trendFields, setTrendFields] = useState({
     grid: Object.fromEntries(TREND_GROUPS.grid.map((k) => [k, true])),
     fuel: Object.fromEntries(TREND_GROUPS.fuel.map((k) => [k, true])),
@@ -206,11 +200,13 @@ export default function SiteDashboardPageV2() {
     setLive(liveRes.data);
   };
 
-  const loadSeries = async (selected) => {
+  const loadSeries = async (selected, rangeOverride = null) => {
     if (!selected) return;
     const params = {};
-    const startIso = localToIso(trendStart);
-    const endIso = localToIso(trendEnd);
+    const requestedStart = rangeOverride?.start ?? trendStart;
+    const requestedEnd = rangeOverride?.end ?? trendEnd;
+    const startIso = localToIso(requestedStart);
+    const endIso = localToIso(requestedEnd);
     if (startIso) params.start = startIso;
     if (endIso) params.end = endIso;
     const tsRes = await api.get(`/fleet/sites/${selected}/timeseries`, { params });
@@ -226,13 +222,12 @@ export default function SiteDashboardPageV2() {
     });
     const sorted = Array.from(byTime.values()).sort((a, b) => a.ts - b.ts);
     setSeries(sorted);
-    setTrendInfo({
-      requestedStart: trendStart,
-      requestedEnd: trendEnd,
-      returnedStart: sorted.length ? new Date(sorted[0].ts).toISOString() : "",
-      returnedEnd: sorted.length ? new Date(sorted[sorted.length - 1].ts).toISOString() : "",
-      points: sorted.length,
-    });
+  };
+
+  const applyTrendRange = async () => {
+    const next = { start: trendStart, end: trendEnd, seq: Date.now() };
+    setTrendApplied(next);
+    await loadSeries(siteId, next);
   };
 
   const loadEvents = async (selected) => {
@@ -311,6 +306,12 @@ export default function SiteDashboardPageV2() {
     if (tab === "events") loadEvents(siteId);
     if (tab === "configuration") loadConfig(siteId);
   }, [tab, siteId]);
+
+  useEffect(() => {
+    if (tab !== "trends") return;
+    if (!trendApplied.start && !trendApplied.end) return;
+    loadSeries(siteId, trendApplied);
+  }, [trendApplied, tab, siteId]);
 
   const values = live?.values || {};
   const gridVoltage = Number(values.grid_voltage ?? 0);
@@ -465,10 +466,8 @@ export default function SiteDashboardPageV2() {
               <input type="datetime-local" value={trendStart} onChange={(e) => setTrendStart(e.target.value)} />
               <label className="inline-label">To</label>
               <input type="datetime-local" value={trendEnd} onChange={(e) => setTrendEnd(e.target.value)} />
-              <button type="button" onClick={() => loadSeries(siteId)}>Apply</button>
+              <button type="button" onClick={applyTrendRange}>Apply</button>
             </div>
-            <div className="meta-line">Applied Range (Browser Local): {trendInfo.requestedStart || "-"} to {trendInfo.requestedEnd || "-"}</div>
-            <div className="meta-line">Returned Coverage: {formatBrowserDateTime(trendInfo.returnedStart)} to {formatBrowserDateTime(trendInfo.returnedEnd)} ({trendInfo.points} points)</div>
           </div>
 
           <div className="chart-grid">
