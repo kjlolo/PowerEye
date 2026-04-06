@@ -135,6 +135,26 @@ th { color: var(--accent); background: #0b1c3f; }
   border: 1px solid rgba(255,212,71,.5);
   color: var(--accent);
 }
+.metric-list {
+  display: grid;
+  gap: 7px;
+  margin-top: 6px;
+}
+.metric-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  color: var(--muted);
+  border-bottom: 1px dashed rgba(37, 71, 125, 0.5);
+  padding-bottom: 4px;
+}
+.metric-row b {
+  color: var(--text);
+  font-weight: 700;
+  text-align: right;
+}
 
 @media (max-width: 920px) {
   .app { grid-template-columns: 1fr; }

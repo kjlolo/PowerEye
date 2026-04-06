@@ -1,6 +1,24 @@
 import { useEffect, useState } from "react";
 import api from "../api";
 
+function StatusChip({ online, onlineText = "ONLINE", offlineText = "OFFLINE" }) {
+  return <span className={`status-chip ${online ? "online" : "offline"}`}>{online ? onlineText : offlineText}</span>;
+}
+
+function WarnChip({ active, activeText = "YES", clearText = "NO" }) {
+  if (active) return <span className="status-chip warn">{activeText}</span>;
+  return <span className="status-chip online">{clearText}</span>;
+}
+
+function MetricRow({ label, value }) {
+  return (
+    <div className="metric-row">
+      <span>{label}</span>
+      <b>{value}</b>
+    </div>
+  );
+}
+
 export default function SiteDashboardPage() {
   const [siteId, setSiteId] = useState("");
   const [sites, setSites] = useState([]);
@@ -78,49 +96,77 @@ export default function SiteDashboardPage() {
         </select>
       </div>
 
+      <div className="section-title">Site Status</div>
       <div className="grid">
-        <div className="card"><h3>Device</h3><p>{latest?.device_id || "-"}</p></div>
-        <div className="card"><h3>Firmware</h3><p>{latest?.fw_version || "-"}</p></div>
-        <div className="card"><h3>Transport</h3><p>{latest?.transport_status || "-"}</p></div>
-        <div className="card"><h3>Network Heartbeat</h3><p className={heartbeatOnline ? "status-online" : "status-offline"}>{heartbeatOnline ? "ONLINE" : "OFFLINE"}</p></div>
-        <div className="card"><h3>Last Telemetry</h3><p>{lastTelemetryAt}</p><p>{telemetryAgeText} ({telemetryFresh ? "FRESH" : "STALE"})</p></div>
+        <div className="card">
+          <h3>Device</h3>
+          <div className="value-line">{latest?.device_id || "-"}</div>
+          <div className="meta-line">Firmware: {latest?.fw_version || "-"}</div>
+        </div>
+        <div className="card">
+          <h3>Transport</h3>
+          <div className="value-line">{String(latest?.transport_status || "-").toUpperCase()}</div>
+          <div className="meta-line">Source: MQTT/HTTP runtime</div>
+        </div>
+        <div className="card">
+          <h3>Network Heartbeat</h3>
+          <div className="value-line"><StatusChip online={heartbeatOnline} /></div>
+          <div className="meta-line">Telemetry link state</div>
+        </div>
+        <div className="card">
+          <h3>Last Telemetry</h3>
+          <div className="meta-line">{lastTelemetryAt}</div>
+          <div className="value-line">{telemetryAgeText}</div>
+          <div className="meta-line">
+            <span className={`status-chip ${telemetryFresh ? "online" : "warn"}`}>{telemetryFresh ? "FRESH" : "STALE"}</span>
+          </div>
+        </div>
       </div>
 
+      <div className="section-title">Subsystems</div>
       <div className="subsystem-grid">
         <div className="card">
           <h3>Grid</h3>
-          <p>Status: <span className={gridOnline ? "status-online" : "status-offline"}>{gridOnline ? "ONLINE" : "OFFLINE"}</span></p>
-          <p>Voltage: {`${gridVoltage.toFixed(1)} V`}</p>
-          <p>Current: {`${Number(values.grid_current ?? 0).toFixed(2)} A`}</p>
-          <p>Power: {`${gridPower.toFixed(1)} W`}</p>
-          <p>Frequency: {`${Number(values.grid_frequency ?? 0).toFixed(2)} Hz`}</p>
-          <p>Power Factor: {`${Number(values.grid_power_factor ?? 0).toFixed(2)}`}</p>
-          <p>Energy: {`${Number(values.grid_energy_kwh ?? 0).toFixed(3)} kWh`}</p>
+          <div className="metric-list">
+            <MetricRow label="Status" value={<StatusChip online={gridOnline} />} />
+            <MetricRow label="Voltage" value={`${gridVoltage.toFixed(1)} V`} />
+            <MetricRow label="Current" value={`${Number(values.grid_current ?? 0).toFixed(2)} A`} />
+            <MetricRow label="Power" value={`${gridPower.toFixed(1)} W`} />
+            <MetricRow label="Frequency" value={`${Number(values.grid_frequency ?? 0).toFixed(2)} Hz`} />
+            <MetricRow label="Power Factor" value={`${Number(values.grid_power_factor ?? 0).toFixed(2)}`} />
+            <MetricRow label="Energy" value={`${Number(values.grid_energy_kwh ?? 0).toFixed(3)} kWh`} />
+          </div>
         </div>
         <div className="card">
           <h3>Fuel</h3>
-          <p>Status: <span className={fuelOnline ? "status-online" : "status-offline"}>{fuelOnline ? "ONLINE" : "OFFLINE"}</span></p>
-          <p>Level: {`${fuelPercent.toFixed(1)} %`}</p>
-          <p>Volume: {`${fuelLiters.toFixed(1)} L`}</p>
-          <p>Raw: {`${Number(values.fuel_raw ?? 0)}`}</p>
+          <div className="metric-list">
+            <MetricRow label="Status" value={<StatusChip online={fuelOnline} />} />
+            <MetricRow label="Level" value={`${fuelPercent.toFixed(1)} %`} />
+            <MetricRow label="Volume" value={`${fuelLiters.toFixed(1)} L`} />
+            <MetricRow label="Raw" value={`${Number(values.fuel_raw ?? 0)}`} />
+          </div>
         </div>
         <div className="card">
           <h3>Generator</h3>
-          <p>Status: <span className={gensetOnline > 0 ? "status-online" : "status-offline"}>{gensetOnline > 0 ? "ONLINE" : "OFFLINE"}</span></p>
-          <p>Online Count: {gensetOnline} / {Number(values.genset_count_configured ?? 0)}</p>
-          <p>Mode: {String(values.genset_mode || "-").toUpperCase()}</p>
-          <p>Alarm: <span className={gensetAlarm ? "status-offline" : "status-online"}>{gensetAlarm ? "YES" : "NO"}</span></p>
-          <p>Voltage: {`${Number(values.genset_voltage ?? 0).toFixed(1)} V`}</p>
-          <p>Battery Voltage: {`${Number(values.genset_battery_voltage ?? 0).toFixed(2)} V`}</p>
-          <p>Current: {`${Number(values.genset_current ?? 0).toFixed(2)} A`}</p>
-          <p>Run Hours: {`${Number(values.genset_run_hours ?? 0).toFixed(0)}`}</p>
+          <div className="metric-list">
+            <MetricRow label="Status" value={<StatusChip online={gensetOnline > 0} />} />
+            <MetricRow label="Online Count" value={`${gensetOnline} / ${Number(values.genset_count_configured ?? 0)}`} />
+            <MetricRow label="Mode" value={String(values.genset_mode || "-").toUpperCase()} />
+            <MetricRow label="Alarm" value={<WarnChip active={gensetAlarm} />} />
+            <MetricRow label="Voltage" value={`${Number(values.genset_voltage ?? 0).toFixed(1)} V`} />
+            <MetricRow label="Battery Voltage" value={`${Number(values.genset_battery_voltage ?? 0).toFixed(2)} V`} />
+            <MetricRow label="Current" value={`${Number(values.genset_current ?? 0).toFixed(2)} A`} />
+            <MetricRow label="Run Hours" value={`${Number(values.genset_run_hours ?? 0).toFixed(0)}`} />
+          </div>
         </div>
         <div className="card">
           <h3>Battery Banks</h3>
-          <p>Status: <span className={batteryOnline > 0 ? "status-online" : "status-offline"}>{batteryOnline > 0 ? "ONLINE" : "OFFLINE"}</span></p>
-          <p>Online Banks: {batteryOnline} / {batteryBanksConfigured}</p>
-          <p>Low SOC Count: {batteryLowSocCount}</p>
-          <p>Power Source: {powerSource.toUpperCase()}</p>
+          <div className="metric-list">
+            <MetricRow label="Status" value={<StatusChip online={batteryOnline > 0} />} />
+            <MetricRow label="Online Banks" value={`${batteryOnline} / ${batteryBanksConfigured}`} />
+            <MetricRow label="Low SOC Count" value={`${batteryLowSocCount}`} />
+            <MetricRow label="Power Source" value={powerSource.toUpperCase()} />
+          </div>
           <table>
             <thead>
               <tr>
