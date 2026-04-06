@@ -230,6 +230,61 @@ def fleet_site_latest(site_id: str, user: User = Depends(get_current_user), db: 
     }
 
 
+@app.get("/fleet/sites/{site_id}/live")
+def fleet_site_live(
+    site_id: str,
+    user: User = Depends(get_current_user),
+) -> dict:
+    fields = [
+        "grid_voltage",
+        "grid_power",
+        "fuel_percent",
+        "fuel_liters",
+        "genset_online_count",
+        "battery_online_count",
+        "network_online",
+        "site_power_available",
+    ]
+    field_filter = " or ".join([f'r["_field"] == "{f}"' for f in fields])
+    query = f"""
+from(bucket: "{settings.influxdb_bucket}")
+  |> range(start: -24h)
+  |> filter(fn: (r) => r["_measurement"] == "telemetry")
+  |> filter(fn: (r) => r["site_id"] == "{site_id}")
+  |> filter(fn: (r) => {field_filter})
+  |> last()
+"""
+    client = get_influx_client()
+    tables = client.query_api().query(query=query)
+    values: dict[str, float | int | bool | str] = {}
+    last_ts: datetime | None = None
+    for table in tables:
+        for rec in table.records:  # type: FluxRecord
+            field = str(rec.get_field())
+            value = rec.get_value()
+            values[field] = value
+            ts = rec.get_time()
+            if ts is not None and (last_ts is None or ts > last_ts):
+                last_ts = ts
+
+    now_utc = datetime.now(timezone.utc)
+    age_sec: int | None = None
+    if last_ts is not None:
+        age_sec = int((now_utc - last_ts).total_seconds())
+        if age_sec < 0:
+            age_sec = 0
+
+    return {
+        "ok": True,
+        "site_id": site_id,
+        "last_telemetry_at": last_ts.isoformat() if last_ts else None,
+        "last_telemetry_age_sec": age_sec,
+        "network_heartbeat_online": bool(values.get("network_online", False)),
+        "values": values,
+        "viewer": user.email,
+    }
+
+
 @app.get("/fleet/sites/{site_id}/timeseries")
 def fleet_site_timeseries(
     site_id: str,
