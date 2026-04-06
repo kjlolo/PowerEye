@@ -7,6 +7,7 @@ export default function OtaPage() {
   const isAdmin = useMemo(() => (user?.roles || []).includes("admin"), [user]);
   const [releases, setReleases] = useState([]);
   const [jobs, setJobs] = useState([]);
+  const [sites, setSites] = useState([]);
   const [reports, setReports] = useState([]);
   const [selectedJobId, setSelectedJobId] = useState(null);
   const [releaseForm, setReleaseForm] = useState({ version: "", filename: "", sha256: "", notes: "" });
@@ -16,9 +17,10 @@ export default function OtaPage() {
   const [message, setMessage] = useState("");
 
   const load = async () => {
-    const [r1, r2] = await Promise.all([api.get("/ota/firmware"), api.get("/ota/jobs")]);
+    const [r1, r2, r3] = await Promise.all([api.get("/ota/firmware"), api.get("/ota/jobs"), api.get("/sites")]);
     setReleases(r1.data.items || []);
     setJobs(r2.data.items || []);
+    setSites(r3.data.items || []);
   };
 
   useEffect(() => {
@@ -90,6 +92,20 @@ export default function OtaPage() {
     }
   };
 
+  const areaOptions = useMemo(() => {
+    const set = new Set();
+    for (const s of sites) {
+      const area = String(s?.area_id || "").trim();
+      if (area) set.add(area);
+    }
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [sites]);
+
+  const siteOptions = useMemo(
+    () => [...sites].sort((a, b) => String(a.site_id || "").localeCompare(String(b.site_id || ""))),
+    [sites]
+  );
+
   const cancelJob = async (id) => {
     try {
       setBusy(true);
@@ -146,17 +162,41 @@ export default function OtaPage() {
             </option>
           ))}
         </select>
-        <select value={jobForm.target_scope} onChange={(e) => setJobForm({ ...jobForm, target_scope: e.target.value })}>
+        <select
+          value={jobForm.target_scope}
+          onChange={(e) => setJobForm({ ...jobForm, target_scope: e.target.value, target_value: "" })}
+        >
           <option value="all">All Devices</option>
           <option value="region">By Region</option>
           <option value="area">By Area</option>
           <option value="site">By Site</option>
         </select>
-        <input
-          placeholder="Target value (site_id/area_id/region)"
-          value={jobForm.target_value}
-          onChange={(e) => setJobForm({ ...jobForm, target_value: e.target.value })}
-        />
+        {jobForm.target_scope === "area" ? (
+          <select value={jobForm.target_value} onChange={(e) => setJobForm({ ...jobForm, target_value: e.target.value })}>
+            <option value="">Select area</option>
+            {areaOptions.map((a) => (
+              <option key={a} value={a}>
+                {a}
+              </option>
+            ))}
+          </select>
+        ) : jobForm.target_scope === "site" ? (
+          <select value={jobForm.target_value} onChange={(e) => setJobForm({ ...jobForm, target_value: e.target.value })}>
+            <option value="">Select site</option>
+            {siteOptions.map((s) => (
+              <option key={s.site_id} value={s.site_id}>
+                {s.site_id} - {s.site_name}
+              </option>
+            ))}
+          </select>
+        ) : (
+          <input
+            placeholder={jobForm.target_scope === "region" ? "Region value (e.g. MIN)" : "Target value"}
+            value={jobForm.target_value}
+            onChange={(e) => setJobForm({ ...jobForm, target_value: e.target.value })}
+            disabled={jobForm.target_scope === "all"}
+          />
+        )}
         <button type="submit" disabled={busy}>{busy ? "Working..." : "Create OTA Job"}</button>
       </form>
 
