@@ -20,17 +20,42 @@ def parse_topic(topic: str) -> tuple[str, str, str]:
     return parts[1], parts[2], parts[3]
 
 
-def upsert_device(device_id: str, site_id: str, fw_version: str = "", transport: str = "mqtt", last_error: str = "") -> None:
+def normalize_phone(value: str) -> str:
+    phone = str(value or "").strip()
+    if not phone:
+        return ""
+    if phone.startswith("00"):
+        return f"+{phone[2:]}"
+    return phone
+
+
+def ensure_registry_schema() -> None:
+    with engine.begin() as conn:
+        conn.execute(text("ALTER TABLE device_registry ADD COLUMN IF NOT EXISTS phone_number VARCHAR(64) NOT NULL DEFAULT ''"))
+
+
+def upsert_device(
+    device_id: str,
+    site_id: str,
+    fw_version: str = "",
+    transport: str = "mqtt",
+    last_error: str = "",
+    phone_number: str = "",
+) -> None:
     now = datetime.now(timezone.utc).replace(tzinfo=None)
     with engine.begin() as conn:
         conn.execute(
             text(
                 """
-                INSERT INTO device_registry (device_id, site_id, fw_version, transport_status, last_error, last_seen_at)
-                VALUES (:device_id, :site_id, :fw_version, :transport_status, :last_error, :last_seen_at)
+                INSERT INTO device_registry (device_id, site_id, fw_version, phone_number, transport_status, last_error, last_seen_at)
+                VALUES (:device_id, :site_id, :fw_version, :phone_number, :transport_status, :last_error, :last_seen_at)
                 ON CONFLICT (device_id) DO UPDATE SET
                   site_id = EXCLUDED.site_id,
                   fw_version = EXCLUDED.fw_version,
+                  phone_number = CASE
+                    WHEN EXCLUDED.phone_number <> '' THEN EXCLUDED.phone_number
+                    ELSE device_registry.phone_number
+                  END,
                   transport_status = EXCLUDED.transport_status,
                   last_error = EXCLUDED.last_error,
                   last_seen_at = EXCLUDED.last_seen_at
@@ -40,6 +65,7 @@ def upsert_device(device_id: str, site_id: str, fw_version: str = "", transport:
                 "device_id": device_id,
                 "site_id": site_id,
                 "fw_version": fw_version,
+                "phone_number": normalize_phone(phone_number),
                 "transport_status": transport,
                 "last_error": last_error,
                 "last_seen_at": now,
@@ -92,6 +118,7 @@ def write_telemetry(site_id: str, device_id: str, data: dict) -> None:
     point.field("power_supply_battery", bool(data.get("power_supply_battery", False)))
     point.field("queue_pending", int(data.get("queue_pending", 0) or 0))
     point.field("rssi", int(data.get("rssi", -113) or -113))
+    point.field("phone_number", str(normalize_phone(data.get("phone_number", ""))))
     point.field("power_source", str(data.get("power_source", "") or ""))
     point.field("alarm_ac_mains", bool(alarms.get("ac_mains", False)))
     point.field("alarm_genset_run", bool(alarms.get("genset_run", False)))
@@ -203,12 +230,14 @@ def on_message(client, userdata, msg):
         return
 
     fw = str(data.get("fw_version", "") or data.get("fw", ""))
+    phone = normalize_phone(data.get("phone_number", ""))
     err = str(data.get("last_error", "") or "")
-    upsert_device(device_id, site_id, fw_version=fw, transport="mqtt", last_error=err)
+    upsert_device(device_id, site_id, fw_version=fw, transport="mqtt", last_error=err, phone_number=phone)
     write_telemetry(site_id, device_id, data)
 
 
 def run() -> None:
+    ensure_registry_schema()
     client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
     if settings.mqtt_username:
         client.username_pw_set(settings.mqtt_username, settings.mqtt_password)

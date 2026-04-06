@@ -504,6 +504,7 @@ export default function SiteDashboardPageV2() {
               <h3>Network Heartbeat</h3>
               <div className="value-line"><StatusChip online={heartbeatOnline} /></div>
               <div className="meta-line">Telemetry link state</div>
+              <div className="meta-line">Phone: {latest?.phone_number || "-"}</div>
             </div>
             <div className={`card ${telemetryFresh ? "card-state-ok" : "card-state-warn"}`}>
               <h3>Last Telemetry</h3>

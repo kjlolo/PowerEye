@@ -68,6 +68,7 @@ class DeviceRegistry(Base):
     device_id: Mapped[str] = mapped_column(String(64), primary_key=True)
     site_id: Mapped[str] = mapped_column(ForeignKey("sites.site_id"), nullable=False)
     fw_version: Mapped[str] = mapped_column(String(128), default="", nullable=False)
+    phone_number: Mapped[str] = mapped_column(String(64), default="", nullable=False)
     transport_status: Mapped[str] = mapped_column(String(64), default="", nullable=False)
     last_error: Mapped[str] = mapped_column(Text, default="", nullable=False)
     last_seen_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)

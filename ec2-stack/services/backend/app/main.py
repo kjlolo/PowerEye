@@ -2,6 +2,7 @@ from datetime import datetime, timezone
 from fastapi import Depends, FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.encoders import jsonable_encoder
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 from influxdb_client.client.flux_table import FluxRecord
 
@@ -109,6 +110,9 @@ def seed_defaults(db: Session) -> None:
 @app.on_event("startup")
 def startup() -> None:
     Base.metadata.create_all(bind=engine)
+    # Backward-compatible schema patch for existing deployments.
+    with engine.begin() as conn:
+        conn.execute(text("ALTER TABLE device_registry ADD COLUMN IF NOT EXISTS phone_number VARCHAR(64) NOT NULL DEFAULT ''"))
     db = SessionLocal()
     try:
         seed_defaults(db)
@@ -372,6 +376,7 @@ def fleet_site_latest(site_id: str, user: User = Depends(get_current_user), db: 
             "device_id": device.device_id,
             "site_id": device.site_id,
             "fw_version": device.fw_version,
+            "phone_number": device.phone_number,
             "transport_status": device.transport_status,
             "last_error": device.last_error,
             "last_seen_at": device.last_seen_at.isoformat() if device.last_seen_at else None,
