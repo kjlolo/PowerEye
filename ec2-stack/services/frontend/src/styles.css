@@ -89,6 +89,16 @@ button:hover { filter: brightness(1.05); }
 .field-selector { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 6px; }
 .field-check { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); }
 .alarm-chip-row { display: flex; gap: 8px; flex-wrap: wrap; }
+.critical-banner {
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border: 1px solid rgba(242,110,125,.8);
+  background: rgba(242,110,125,.14);
+  color: #ffd7de;
+  border-radius: 10px;
+  font-weight: 700;
+}
+.area-grid { display: grid; gap: 12px; grid-template-columns: repeat(3, minmax(260px, 1fr)); }
 .noc-strip {
   display: grid;
   grid-template-columns: repeat(6, minmax(160px, 1fr));
@@ -211,5 +221,6 @@ th { color: var(--accent); background: #0b1c3f; }
   .subsystem-grid { grid-template-columns: 1fr; }
   .chart-grid { grid-template-columns: 1fr; }
   .noc-strip { grid-template-columns: 1fr 1fr; }
+  .area-grid { grid-template-columns: 1fr; }
   .form-row { grid-template-columns: 1fr; }
 }

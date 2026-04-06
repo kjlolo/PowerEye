@@ -399,6 +399,7 @@ export default function SiteDashboardPageV2() {
   const gridSupplying = !!values.power_supply_grid;
   const gensetSupplying = !!values.power_supply_genset;
   const activeAlarmCount = (events.active_alarms || []).filter((a) => a.active).length;
+  const criticalAlarmCount = (events.active_alarms || []).filter((a) => a.active && a.severity === "critical").length;
 
   const gridCardState = gridOnline ? "ok" : "fault";
   const fuelCardState = fuelOnline ? "ok" : "fault";
@@ -441,7 +442,7 @@ export default function SiteDashboardPageV2() {
           <b><StatusChip online={sitePowerAvailable} onlineText="AVAILABLE" offlineText="UNAVAILABLE" /></b>
         </div>
         <div className="noc-tile">
-          <span>Supply Path</span>
+          <span>Supplying Source</span>
           <b>{gridSupplying ? "GRID" : gensetSupplying ? "GENSET" : batterySupplying ? "BATTERY" : "NONE"}</b>
         </div>
         <div className="noc-tile">
@@ -460,6 +461,12 @@ export default function SiteDashboardPageV2() {
         <button type="button" className={`secondary ${tab === "configuration" ? "tab-active" : ""}`} onClick={() => setTab("configuration")}>Configuration</button>
         <button type="button" className={`secondary ${tab === "events" ? "tab-active" : ""}`} onClick={() => setTab("events")}>Events</button>
       </div>
+
+      {criticalAlarmCount > 0 ? (
+        <div className="critical-banner">
+          Critical incident active: {criticalAlarmCount} critical alarm{criticalAlarmCount > 1 ? "s" : ""} detected.
+        </div>
+      ) : null}
 
       {tab === "overview" && (
         <>
@@ -494,6 +501,7 @@ export default function SiteDashboardPageV2() {
           <div className="subsystem-grid">
             <div className={`card card-state-${gridCardState}`}>
               <h3>Grid</h3>
+              <div className="meta-line">Updated: {lastTelemetryAt}</div>
               <div className="metric-list">
                 <MetricRow label="Status" value={<StatusChip online={gridOnline} />} />
                 <MetricRow label="Voltage" value={`${gridVoltage.toFixed(1)} V`} />
@@ -506,6 +514,7 @@ export default function SiteDashboardPageV2() {
             </div>
             <div className={`card card-state-${fuelCardState}`}>
               <h3>Fuel</h3>
+              <div className="meta-line">Updated: {lastTelemetryAt}</div>
               <div className="metric-list">
                 <MetricRow label="Status" value={<StatusChip online={fuelOnline} />} />
                 <MetricRow label="Level" value={`${fuelPercent.toFixed(1)} %`} />
@@ -515,6 +524,7 @@ export default function SiteDashboardPageV2() {
             </div>
             <div className={`card card-state-${gensetCardState}`}>
               <h3>Generator</h3>
+              <div className="meta-line">Updated: {lastTelemetryAt}</div>
               <div className="metric-list">
                 <MetricRow label="Status" value={<StatusChip online={gensetOnline > 0} />} />
                 <MetricRow label="Online Count" value={`${gensetOnline} / ${Number(values.genset_count_configured ?? 0)}`} />
@@ -528,6 +538,7 @@ export default function SiteDashboardPageV2() {
             </div>
             <div className={`card card-state-${batteryCardState}`}>
               <h3>Batteries</h3>
+              <div className="meta-line">Updated: {lastTelemetryAt}</div>
               <div className="metric-list">
                 <MetricRow label="Status" value={<StatusChip online={batteryOnline > 0} />} />
                 <MetricRow label="Online Banks" value={`${batteryOnline} / ${batteryBanksConfigured}`} />
@@ -686,7 +697,7 @@ export default function SiteDashboardPageV2() {
             <div className="alarm-chip-row">
               {(events.active_alarms || []).filter((a) => a.active).map((a) => (
                 <span key={a.alarm_key} className={`status-chip ${a.active ? "warn" : "online"}`}>
-                  {a.alarm_label}: {a.active ? "ACTIVE" : "CLEAR"}
+                  [{String(a.severity || "major").toUpperCase()}] {a.alarm_label}: ACTIVE
                 </span>
               ))}
               {(events.active_alarms || []).filter((a) => a.active).length === 0 ? (
@@ -705,19 +716,21 @@ export default function SiteDashboardPageV2() {
                 <tr>
                   <th>Timestamp</th>
                   <th>Alarm</th>
+                  <th>Severity</th>
                   <th>State</th>
                 </tr>
               </thead>
               <tbody>
                 {(events.history || []).length === 0 ? (
                   <tr>
-                    <td colSpan={3}>No alarm events for selected date range.</td>
+                    <td colSpan={4}>No alarm events for selected date range.</td>
                   </tr>
                 ) : (
                   (events.history || []).map((evt, idx) => (
                     <tr key={`${evt.alarm_key}-${evt.time}-${idx}`}>
                       <td>{formatBrowserDateTime(evt.time)}</td>
                       <td>{evt.alarm_label}</td>
+                      <td>{String(evt.severity || "major").toUpperCase()}</td>
                       <td>{evt.state.toUpperCase()}</td>
                     </tr>
                   ))

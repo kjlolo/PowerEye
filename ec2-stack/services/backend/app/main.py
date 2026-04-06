@@ -59,6 +59,19 @@ ALARM_FIELDS = {
     "alarm_genset_offline": "Generator Subsystem Offline",
     "alarm_battery_offline": "Battery Subsystem Offline",
 }
+ALARM_SEVERITY = {
+    "alarm_ac_mains": "critical",
+    "alarm_genset_run": "minor",
+    "alarm_genset_fail": "critical",
+    "alarm_battery_theft": "critical",
+    "alarm_power_cable_theft": "critical",
+    "alarm_door_open": "major",
+    "genset_any_alarm": "major",
+    "alarm_grid_offline": "major",
+    "alarm_fuel_offline": "major",
+    "alarm_genset_offline": "major",
+    "alarm_battery_offline": "major",
+}
 
 app.add_middleware(
     CORSMiddleware,
@@ -227,6 +240,122 @@ def fleet_overview(user: User = Depends(get_current_user), db: Session = Depends
             }
         )
     return {"ok": True, "items": summary, "count": len(summary), "viewer": user.email}
+
+
+@app.get("/fleet/regional-view")
+def fleet_regional_view(
+    region: str = "",
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    q = db.query(Site).filter(Site.is_active.is_(True))
+    if region:
+        q = q.filter(Site.region == region)
+    sites = q.order_by(Site.area_id.asc(), Site.site_id.asc()).all()
+    if not sites:
+        return {"ok": True, "region": region, "summary": {}, "areas": [], "viewer": user.email}
+
+    site_ids = [s.site_id for s in sites]
+    site_meta = {s.site_id: s for s in sites}
+    quoted_sites = ",".join([f'"{sid}"' for sid in site_ids])
+    query = f"""
+from(bucket: "{settings.influxdb_bucket}")
+  |> range(start: -24h)
+  |> filter(fn: (r) => r["_measurement"] == "telemetry")
+  |> filter(fn: (r) => r["_field"] == "site_power_available" or r["_field"] == "power_source")
+  |> filter(fn: (r) => contains(value: r["site_id"], set: [{quoted_sites}]))
+  |> group(columns: ["site_id","_field"])
+  |> last()
+"""
+    client = get_influx_client()
+    tables = client.query_api().query(query=query)
+    latest_by_site: dict[str, dict] = {}
+    for table in tables:
+        for rec in table.records:  # type: FluxRecord
+            sid = str(rec.values.get("site_id", ""))
+            if not sid:
+                continue
+            row = latest_by_site.get(sid, {"site_id": sid, "site_power_available": False, "power_source": "none", "ts": None})
+            field = str(rec.get_field())
+            if field == "site_power_available":
+                row["site_power_available"] = bool(rec.get_value())
+            elif field == "power_source":
+                row["power_source"] = str(rec.get_value() or "none")
+            ts = rec.get_time()
+            if ts is not None and (row["ts"] is None or ts > row["ts"]):
+                row["ts"] = ts
+            latest_by_site[sid] = row
+
+    devices = db.query(DeviceRegistry).all()
+    by_site_device = {d.site_id: d for d in devices}
+
+    area_map: dict[str, dict] = {}
+    region_total = len(sites)
+    region_available = 0
+    region_stale = 0
+    for sid in site_ids:
+        s = site_meta[sid]
+        lv = latest_by_site.get(sid, {"site_id": sid, "site_power_available": False, "power_source": "none", "ts": None})
+        dev = by_site_device.get(sid)
+        stale = dev is None or dev.last_seen_at is None
+        available = bool(lv.get("site_power_available", False)) and not stale
+        if available:
+            region_available += 1
+        if stale:
+            region_stale += 1
+        area = s.area_id or "UNASSIGNED"
+        a = area_map.get(area)
+        if not a:
+            a = {"area_id": area, "total_sites": 0, "available_sites": 0, "stale_sites": 0, "contributors": []}
+            area_map[area] = a
+        a["total_sites"] += 1
+        if available:
+            a["available_sites"] += 1
+        if stale:
+            a["stale_sites"] += 1
+        if (not available) or stale:
+            reason = "stale"
+            if not stale and lv.get("power_source") == "none":
+                reason = "no_power_source"
+            elif not stale and not lv.get("site_power_available", False):
+                reason = "power_unavailable"
+            a["contributors"].append(
+                {
+                    "site_id": sid,
+                    "site_name": s.site_name,
+                    "reason": reason,
+                    "power_source": lv.get("power_source", "none"),
+                    "last_seen_at": dev.last_seen_at.isoformat() if dev and dev.last_seen_at else None,
+                }
+            )
+
+    areas = []
+    for area_id, a in area_map.items():
+        total = a["total_sites"]
+        avail_pct = (a["available_sites"] / total * 100.0) if total else 0.0
+        severity_order = {"stale": 0, "power_unavailable": 1, "no_power_source": 2}
+        contributors = sorted(a["contributors"], key=lambda c: severity_order.get(c["reason"], 99))[:5]
+        areas.append(
+            {
+                "area_id": area_id,
+                "total_sites": total,
+                "available_sites": a["available_sites"],
+                "stale_sites": a["stale_sites"],
+                "availability_pct": round(avail_pct, 2),
+                "contributors": contributors,
+            }
+        )
+    areas.sort(key=lambda x: x["area_id"])
+    region_availability = (region_available / region_total * 100.0) if region_total else 0.0
+    summary = {
+        "region": region or (sites[0].region if sites else ""),
+        "total_sites": region_total,
+        "available_sites": region_available,
+        "stale_sites": region_stale,
+        "availability_pct": round(region_availability, 2),
+        "area_count": len(areas),
+    }
+    return {"ok": True, "region": summary["region"], "summary": summary, "areas": areas, "viewer": user.email}
 
 
 @app.get("/fleet/sites/{site_id}/latest")
@@ -462,6 +591,7 @@ from(bucket: "{settings.influxdb_bucket}")
                         "time": row["time"].isoformat(),
                         "alarm_key": field,
                         "alarm_label": ALARM_FIELDS[field],
+                        "severity": ALARM_SEVERITY.get(field, "major"),
                         "state": "active",
                     }
                 )
@@ -471,6 +601,7 @@ from(bucket: "{settings.influxdb_bucket}")
                         "time": row["time"].isoformat(),
                         "alarm_key": field,
                         "alarm_label": ALARM_FIELDS[field],
+                        "severity": ALARM_SEVERITY.get(field, "major"),
                         "state": "active" if current else "cleared",
                     }
                 )
@@ -488,6 +619,7 @@ from(bucket: "{settings.influxdb_bucket}")
             "alarm_key": field,
             "alarm_label": ALARM_FIELDS[field],
             "active": bool(active_map.get(field, False)),
+            "severity": ALARM_SEVERITY.get(field, "major"),
         }
         for field in ALARM_FIELDS.keys()
     ]

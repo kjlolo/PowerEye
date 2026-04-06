@@ -1,60 +1,114 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import api from "../api";
 
 export default function RegionalDashboardPage() {
-  const [rows, setRows] = useState([]);
+  const [regions, setRegions] = useState([]);
+  const [selectedRegion, setSelectedRegion] = useState("");
+  const [summary, setSummary] = useState(null);
+  const [areas, setAreas] = useState([]);
 
   const load = async () => {
-    const { data } = await api.get("/fleet/overview");
-    setRows(data.items || []);
+    const [sitesRes, regionalRes] = await Promise.all([
+      api.get("/sites"),
+      api.get("/fleet/regional-view", { params: { region: selectedRegion } }),
+    ]);
+    const uniqueRegions = Array.from(new Set((sitesRes.data.items || []).map((s) => s.region).filter(Boolean))).sort();
+    setRegions(uniqueRegions);
+    if (!selectedRegion && uniqueRegions.length) {
+      setSelectedRegion(uniqueRegions[0]);
+      return;
+    }
+    setSummary(regionalRes.data.summary || null);
+    setAreas(regionalRes.data.areas || []);
   };
 
   useEffect(() => {
     load();
-  }, []);
-
-  const byRegion = useMemo(() => {
-    const map = new Map();
-    rows.forEach((r) => {
-      const x = map.get(r.region) || { region: r.region, total: 0, stale: 0 };
-      x.total += 1;
-      if (!r.last_seen_at) x.stale += 1;
-      map.set(r.region, x);
-    });
-    return Array.from(map.values()).sort((a, b) => a.region.localeCompare(b.region));
-  }, [rows]);
+  }, [selectedRegion]);
 
   return (
     <div>
       <div className="topbar">
         <h2>Regional Dashboard</h2>
-        <button onClick={load}>Refresh</button>
+        <div className="row">
+          <select value={selectedRegion} onChange={(e) => setSelectedRegion(e.target.value)}>
+            {regions.map((r) => (
+              <option key={r} value={r}>
+                {r}
+              </option>
+            ))}
+          </select>
+          <button onClick={load}>Refresh</button>
+        </div>
       </div>
+
+      <div className="section-title">Region Summary</div>
       <div className="card">
-        <h3>Region Availability Overview</h3>
-        <table>
-          <thead>
-            <tr>
-              <th>Region</th>
-              <th>Total Sites</th>
-              <th>Sites Missing Heartbeat</th>
-              <th>Availability %</th>
-            </tr>
-          </thead>
-          <tbody>
-            {byRegion.map((r) => {
-              const avail = r.total > 0 ? ((r.total - r.stale) / r.total) * 100 : 0;
-              return (
-                <tr key={r.region}>
-                  <td>{r.region}</td>
-                  <td>{r.total}</td>
-                  <td>{r.stale}</td>
-                  <td>{avail.toFixed(1)}%</td>
+        <div className="grid">
+          <div>
+            <div className="meta-line">Region</div>
+            <div className="value-line">{summary?.region || selectedRegion || "-"}</div>
+          </div>
+          <div>
+            <div className="meta-line">Total Sites</div>
+            <div className="value-line">{summary?.total_sites ?? 0}</div>
+          </div>
+          <div>
+            <div className="meta-line">Available Sites</div>
+            <div className="value-line">{summary?.available_sites ?? 0}</div>
+          </div>
+          <div>
+            <div className="meta-line">Availability</div>
+            <div className="value-line">{Number(summary?.availability_pct ?? 0).toFixed(1)}%</div>
+          </div>
+          <div>
+            <div className="meta-line">Stale Sites</div>
+            <div className="value-line">{summary?.stale_sites ?? 0}</div>
+          </div>
+          <div>
+            <div className="meta-line">Areas</div>
+            <div className="value-line">{summary?.area_count ?? 0}</div>
+          </div>
+        </div>
+      </div>
+
+      <div className="section-title">Areas</div>
+      <div className="area-grid">
+        {areas.map((a) => (
+          <div className="card" key={a.area_id}>
+            <h3>{a.area_id}</h3>
+            <div className="metric-list">
+              <div className="metric-row"><span>Availability</span><b>{Number(a.availability_pct || 0).toFixed(1)}%</b></div>
+              <div className="metric-row"><span>Sites</span><b>{a.available_sites}/{a.total_sites}</b></div>
+              <div className="metric-row"><span>Stale Sites</span><b>{a.stale_sites}</b></div>
+            </div>
+            <div className="meta-line">Top Contributors Lowering Availability</div>
+            <table>
+              <thead>
+                <tr>
+                  <th>Site</th>
+                  <th>Reason</th>
+                  <th>Source</th>
                 </tr>
-              );
-            })}
-          </tbody>
-        </table>
+              </thead>
+              <tbody>
+                {(a.contributors || []).length === 0 ? (
+                  <tr>
+                    <td colSpan={3}>No current contributors.</td>
+                  </tr>
+                ) : (
+                  (a.contributors || []).map((c) => (
+                    <tr key={`${a.area_id}-${c.site_id}`}>
+                      <td>{c.site_id}</td>
+                      <td>{String(c.reason || "").replaceAll("_", " ")}</td>
+                      <td>{String(c.power_source || "none").toUpperCase()}</td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        ))}
       </div>
     </div>
   );
