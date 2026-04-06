@@ -33,9 +33,18 @@ export default function OtaPage() {
     return `${(n / (1024 * 1024)).toFixed(2)} MB`;
   };
 
+  const hasWebCryptoDigest = () =>
+    typeof window !== "undefined" &&
+    !!window.crypto &&
+    !!window.crypto.subtle &&
+    typeof window.crypto.subtle.digest === "function";
+
   const computeSha256 = async (file) => {
+    if (!hasWebCryptoDigest()) {
+      throw new Error("Browser crypto unavailable. Enter SHA256 manually or open app over HTTPS.");
+    }
     const buf = await file.arrayBuffer();
-    const hash = await crypto.subtle.digest("SHA-256", buf);
+    const hash = await window.crypto.subtle.digest("SHA-256", buf);
     const bytes = Array.from(new Uint8Array(hash));
     return bytes.map((b) => b.toString(16).padStart(2, "0")).join("");
   };
@@ -50,7 +59,10 @@ export default function OtaPage() {
       setBusy(true);
       setMessage("Preparing release...");
       const filename = releaseForm.filename || firmwareFile.name;
-      const sha256 = releaseForm.sha256 || (await computeSha256(firmwareFile));
+      let sha256 = (releaseForm.sha256 || "").trim();
+      if (!sha256) {
+        sha256 = await computeSha256(firmwareFile);
+      }
       const payload = {
         version: releaseForm.version.trim(),
         filename,
