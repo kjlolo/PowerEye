@@ -29,6 +29,12 @@ services:
     volumes:
       - emqx_data:/opt/emqx/data
       - emqx_log:/opt/emqx/log
+    healthcheck:
+      test: ["CMD", "sh", "-lc", "emqx ctl status >/dev/null 2>&1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
 
   postgres:
     image: postgres:16-alpine
@@ -80,7 +86,8 @@ services:
       - DATABASE_URL=postgresql+psycopg://$POSTGRES_USER:$POSTGRES_PASSWORD@postgres:5432/$POSTGRES_DB
       - INFLUXDB_URL=http://influxdb:8086
     depends_on:
-      - emqx
+      emqx:
+        condition: service_healthy
       - postgres
       - influxdb
 

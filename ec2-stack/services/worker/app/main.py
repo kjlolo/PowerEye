@@ -1,4 +1,5 @@
 import json
+import time
 from datetime import datetime, timezone
 
 import paho.mqtt.client as mqtt
@@ -192,8 +193,16 @@ def run() -> None:
         client.username_pw_set(settings.mqtt_username, settings.mqtt_password)
     client.on_connect = on_connect
     client.on_message = on_message
-    client.connect(settings.mqtt_broker_host, settings.mqtt_broker_port, 60)
-    client.loop_forever()
+    client.reconnect_delay_set(min_delay=2, max_delay=30)
+
+    while True:
+        try:
+            print(f"[worker] connecting mqtt broker={settings.mqtt_broker_host}:{settings.mqtt_broker_port}")
+            client.connect(settings.mqtt_broker_host, settings.mqtt_broker_port, 60)
+            client.loop_forever(retry_first_connection=True)
+        except Exception as e:
+            print(f"[worker] mqtt connect/loop error: {e}; retry in 5s")
+            time.sleep(5)
 
 
 if __name__ == "__main__":
