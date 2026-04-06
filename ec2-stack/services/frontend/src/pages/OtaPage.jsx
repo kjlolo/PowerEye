@@ -41,6 +41,7 @@ export default function OtaPage() {
       setMessage("Select a firmware .bin file first.");
       return;
     }
+    let createdVersion = "";
     try {
       setBusy(true);
       setMessage("Preparing release...");
@@ -55,6 +56,7 @@ export default function OtaPage() {
         sha256,
         notes: releaseForm.notes || "",
       };
+      createdVersion = payload.version;
       const { data } = await api.post("/ota/firmware", payload);
       setMessage("Uploading firmware binary to S3...");
       const putResp = await fetch(data.upload_url, {
@@ -63,13 +65,27 @@ export default function OtaPage() {
         body: firmwareFile,
       });
       if (!putResp.ok) {
-        throw new Error(`Firmware upload failed (${putResp.status})`);
+        const errText = await putResp.text().catch(() => "");
+        throw new Error(`Firmware upload failed (${putResp.status}) ${errText}`.trim());
+      }
+      // Confirm object exists and has bytes before declaring success.
+      const verify = await api.get(`/ota/firmware/${encodeURIComponent(payload.version)}/upload-status`);
+      if (!verify?.data?.uploaded || Number(verify?.data?.size_bytes || 0) <= 0) {
+        throw new Error("Upload verification failed: object not found or size is zero bytes.");
       }
       setReleaseForm({ version: "", filename: "", sha256: "", notes: "" });
       setFirmwareFile(null);
       setMessage("Release created and binary uploaded.");
       await load();
     } catch (err) {
+      // Roll back release row if upload/create flow failed after release creation.
+      if (createdVersion) {
+        try {
+          await api.delete(`/ota/firmware/${encodeURIComponent(createdVersion)}`);
+        } catch {
+          // Ignore cleanup errors; show primary error below.
+        }
+      }
       setMessage(err?.response?.data?.detail || err?.message || "Failed to create firmware release.");
     } finally {
       setBusy(false);
