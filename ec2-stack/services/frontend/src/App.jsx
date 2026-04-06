@@ -3,7 +3,7 @@ import RequireAuth from "./components/RequireAuth";
 import Layout from "./components/Layout";
 import LoginPage from "./pages/LoginPage";
 import SiteListPage from "./pages/SiteListPage";
-import SiteDashboardPage from "./pages/SiteDashboardPage";
+import SiteDashboardPage from "./pages/SiteDashboardPageV2";
 import RegionalDashboardPage from "./pages/RegionalDashboardPage";
 import OtaPage from "./pages/OtaPage";
 

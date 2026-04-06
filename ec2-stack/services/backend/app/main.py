@@ -45,7 +45,7 @@ from .services import (
 app = FastAPI(title="PowerEye Control Plane", version="1.0.0")
 
 BLOCKED_REMOTE_CONFIG_KEYS = {"identity", "cloud"}
-ALLOWED_REMOTE_CONFIG_KEYS = {"rs485", "fuel", "alarms"}
+ALLOWED_REMOTE_CONFIG_KEYS = {"rs485", "fuel", "alarms", "power_availability"}
 ALARM_FIELDS = {
     "alarm_ac_mains": "AC Mains Failure",
     "alarm_genset_run": "Genset Running",
@@ -332,6 +332,8 @@ from(bucket: "{settings.influxdb_bucket}")
 def fleet_site_timeseries(
     site_id: str,
     hours: int = Query(6, ge=1, le=168),
+    start: str = Query("", description="ISO8601 UTC start time"),
+    end: str = Query("", description="ISO8601 UTC end time"),
     user: User = Depends(get_current_user),
 ) -> dict:
     fields = [
@@ -351,9 +353,19 @@ def fleet_site_timeseries(
         "rssi",
     ]
     field_filter = " or ".join([f'r["_field"] == "{f}"' for f in fields])
+    safe_start = start.replace('"', "").strip()
+    safe_end = end.replace('"', "").strip()
+    if safe_start:
+        range_clause = f'|> range(start: time(v: "{safe_start}")'
+        if safe_end:
+            range_clause += f', stop: time(v: "{safe_end}")'
+        range_clause += ")"
+    else:
+        range_clause = f"|> range(start: -{hours}h)"
+
     query = f"""
 from(bucket: "{settings.influxdb_bucket}")
-  |> range(start: -{hours}h)
+  {range_clause}
   |> filter(fn: (r) => r["_measurement"] == "telemetry")
   |> filter(fn: (r) => r["site_id"] == "{site_id}")
   |> filter(fn: (r) => {field_filter})
@@ -371,12 +383,24 @@ from(bucket: "{settings.influxdb_bucket}")
 def fleet_site_events(
     site_id: str,
     hours: int = Query(24, ge=1, le=168),
+    start: str = Query("", description="ISO8601 UTC start time"),
+    end: str = Query("", description="ISO8601 UTC end time"),
     user: User = Depends(get_current_user),
 ) -> dict:
     alarm_field_filter = " or ".join([f'r["_field"] == "{f}"' for f in ALARM_FIELDS.keys()])
+    safe_start = start.replace('"', "").strip()
+    safe_end = end.replace('"', "").strip()
+    if safe_start:
+        history_range = f'|> range(start: time(v: "{safe_start}")'
+        if safe_end:
+            history_range += f', stop: time(v: "{safe_end}")'
+        history_range += ")"
+    else:
+        history_range = f"|> range(start: -{hours}h)"
+
     history_query = f"""
 from(bucket: "{settings.influxdb_bucket}")
-  |> range(start: -{hours}h)
+  {history_range}
   |> filter(fn: (r) => r["_measurement"] == "telemetry")
   |> filter(fn: (r) => r["site_id"] == "{site_id}")
   |> filter(fn: (r) => {alarm_field_filter})
@@ -507,7 +531,7 @@ def put_site_subsystem_config(
     if invalid:
         raise HTTPException(
             status_code=400,
-            detail=f"invalid_keys: {','.join(invalid)} (allowed: rs485,fuel,alarms)",
+            detail=f"invalid_keys: {','.join(invalid)} (allowed: rs485,fuel,alarms,power_availability)",
         )
 
     item = db.query(SiteSubsystemConfig).filter(SiteSubsystemConfig.site_id == site_id).first()
