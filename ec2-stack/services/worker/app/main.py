@@ -151,6 +151,23 @@ def write_telemetry(site_id: str, device_id: str, data: dict) -> None:
     if primary_gen is None and gensets and isinstance(gensets[0], dict):
         primary_gen = gensets[0]
     if isinstance(primary_gen, dict):
+        mode = str(primary_gen.get("mode", "") or "").lower()
+        active_kw = float(primary_gen.get("active_power_kw", 0.0) or 0.0)
+        online = bool(primary_gen.get("online", False))
+        if not online:
+            state = "offline"
+        elif mode == "test":
+            state = "test"
+        elif active_kw > 0.2:
+            state = "running"
+        elif mode == "stop":
+            state = "standby"
+        elif mode in {"auto", "manual"}:
+            state = "standby"
+        else:
+            state = "unknown"
+
+        point.field("genset_state", state)
         point.field("genset_mode", str(primary_gen.get("mode", "") or ""))
         point.field("genset_alarm", bool(primary_gen.get("alarm", False)))
         point.field("genset_voltage", float(primary_gen.get("voltage_a", 0.0) or 0.0))

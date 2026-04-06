@@ -392,6 +392,8 @@ export default function SiteDashboardPageV2() {
   const gridOnline = !!values.grid_online || gridVoltage > 150;
   const fuelOnline = !!values.fuel_online || !!values.fuel_sensor_online;
   const gensetAlarm = !!values.genset_alarm || !!values.genset_any_alarm;
+  const gensetState = String(values.genset_state || (gensetOnline > 0 ? "standby" : "offline"));
+  const gensetCommOnline = gensetOnline > 0;
   const powerSource = String(values.power_source || "-");
   const sitePowerAvailable = !!values.site_power_available;
   const batterySupplying = !!values.power_supply_battery;
@@ -536,35 +538,40 @@ export default function SiteDashboardPageV2() {
                 <MetricRow label="Raw" value={`${Number(values.fuel_raw ?? 0)}`} />
               </div>
             </div>
-            <div className={`card card-state-${gensetCardState}`}>
+            <div className={`card card-state-${gensetCardState} card-span-2`}>
               <h3>Generator</h3>
               <div className="meta-line">Updated: {lastTelemetryAt}</div>
-              <div className="metric-list">
-                <MetricRow label="Status" value={<StatusChip online={gensetOnline > 0} />} />
-                <MetricRow label="Online Count" value={`${gensetOnline} / ${Number(values.genset_count_configured ?? 0)}`} />
-                <MetricRow label="Mode" value={String(values.genset_mode || "-").toUpperCase()} />
-                <MetricRow label="Alarm" value={<WarnChip active={gensetAlarm} />} />
-                <MetricRow label="Voltage" value={`${Number(values.genset_voltage ?? 0).toFixed(1)} V`} />
-                <MetricRow label="Battery Voltage" value={`${Number(values.genset_battery_voltage ?? 0).toFixed(2)} V`} />
-                <MetricRow label="Current" value={`${Number(values.genset_current ?? 0).toFixed(2)} A`} />
-                <MetricRow label="Engine Temp" value={`${Number(values.genset_engine_temp_c ?? 0).toFixed(1)} C`} />
-                <MetricRow label="Oil Pressure" value={`${Number(values.genset_oil_pressure_kpa ?? 0).toFixed(1)} kPa`} />
-                <MetricRow label="Fuel Level" value={`${Number(values.genset_fuel_level_percent ?? 0).toFixed(1)} %`} />
-                <MetricRow label="Active Power" value={`${Number(values.genset_active_power_kw ?? 0).toFixed(2)} kW`} />
-                <MetricRow label="Apparent Power" value={`${Number(values.genset_apparent_power_kva ?? 0).toFixed(2)} kVA`} />
-                <MetricRow label="Run Hours" value={`${Number(values.genset_run_hours ?? 0).toFixed(0)}`} />
+              <div className="generator-layout">
+                <div className="metric-list metric-list-two">
+                  <MetricRow label="Status (Comms)" value={<StatusChip online={gensetCommOnline} onlineText="ONLINE" offlineText="OFFLINE" />} />
+                  <MetricRow label="State (Operation)" value={gensetState.toUpperCase()} />
+                  <MetricRow label="Online Count" value={`${gensetOnline} / ${Number(values.genset_count_configured ?? 0)}`} />
+                  <MetricRow label="Mode" value={String(values.genset_mode || "-").toUpperCase()} />
+                  <MetricRow label="Alarm" value={<WarnChip active={gensetAlarm} />} />
+                  <MetricRow label="Run Hours" value={`${Number(values.genset_run_hours ?? 0).toFixed(0)}`} />
+                  <MetricRow label="Voltage" value={`${Number(values.genset_voltage ?? 0).toFixed(1)} V`} />
+                  <MetricRow label="Current" value={`${Number(values.genset_current ?? 0).toFixed(2)} A`} />
+                  <MetricRow label="Battery Voltage" value={`${Number(values.genset_battery_voltage ?? 0).toFixed(2)} V`} />
+                  <MetricRow label="Fuel Level" value={`${Number(values.genset_fuel_level_percent ?? 0).toFixed(1)} %`} />
+                  <MetricRow label="Engine Temp" value={`${Number(values.genset_engine_temp_c ?? 0).toFixed(1)} C`} />
+                  <MetricRow label="Oil Pressure" value={`${Number(values.genset_oil_pressure_kpa ?? 0).toFixed(1)} kPa`} />
+                  <MetricRow label="Active Power" value={`${Number(values.genset_active_power_kw ?? 0).toFixed(2)} kW`} />
+                  <MetricRow label="Apparent Power" value={`${Number(values.genset_apparent_power_kva ?? 0).toFixed(2)} kVA`} />
+                </div>
+                <div className="control-panel">
+                  <div className="meta-line">Genset Control</div>
+                  <div className="row">
+                    <button type="button" className="secondary" onClick={() => requestGensetControl("start")}>Start</button>
+                    <button type="button" className="secondary danger" onClick={() => requestGensetControl("stop")}>Stop</button>
+                  </div>
+                  <div className="row" style={{ marginTop: 6 }}>
+                    <button type="button" className="secondary" onClick={() => requestGensetControl("mode:auto")}>Auto</button>
+                    <button type="button" className="secondary" onClick={() => requestGensetControl("mode:manual")}>Manual</button>
+                    <button type="button" className="secondary" onClick={() => requestGensetControl("mode:test")}>Test</button>
+                  </div>
+                  {gensetControlMsg ? <div className="meta-line">{gensetControlMsg}</div> : null}
+                </div>
               </div>
-              <div className="meta-line" style={{ marginTop: 12 }}>Genset Control</div>
-              <div className="row">
-                <button type="button" className="secondary" onClick={() => requestGensetControl("start")}>Start</button>
-                <button type="button" className="secondary danger" onClick={() => requestGensetControl("stop")}>Stop</button>
-              </div>
-              <div className="row" style={{ marginTop: 6 }}>
-                <button type="button" className="secondary" onClick={() => requestGensetControl("mode:auto")}>Auto</button>
-                <button type="button" className="secondary" onClick={() => requestGensetControl("mode:manual")}>Manual</button>
-                <button type="button" className="secondary" onClick={() => requestGensetControl("mode:test")}>Test</button>
-              </div>
-              {gensetControlMsg ? <div className="meta-line">{gensetControlMsg}</div> : null}
             </div>
           </div>
 

@@ -407,6 +407,7 @@ def fleet_site_live(
         "genset_any_alarm",
         "genset_count_configured",
         "genset_mode",
+        "genset_state",
         "genset_alarm",
         "genset_voltage",
         "genset_battery_voltage",
