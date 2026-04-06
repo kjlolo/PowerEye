@@ -77,3 +77,16 @@ class OtaCheckRequest(BaseModel):
 
 class SiteSubsystemConfigIn(BaseModel):
     config: dict[str, Any]
+
+
+class AdminUserCreateIn(BaseModel):
+    email: str
+    password: str
+    role: str = Field(pattern="^(admin|viewer)$")
+    is_active: bool = True
+
+
+class AdminUserUpdateIn(BaseModel):
+    role: str | None = Field(default=None, pattern="^(admin|viewer)$")
+    password: str | None = None
+    is_active: bool | None = None

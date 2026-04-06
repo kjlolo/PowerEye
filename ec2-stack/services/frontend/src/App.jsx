@@ -6,6 +6,7 @@ import SiteListPage from "./pages/SiteListPage";
 import SiteDashboardPage from "./pages/SiteDashboardPageV2";
 import RegionalDashboardPage from "./pages/RegionalDashboardPage";
 import OtaPage from "./pages/OtaPage";
+import UsersPage from "./pages/UsersPage";
 
 export default function App() {
   return (
@@ -22,6 +23,7 @@ export default function App() {
                 <Route path="/dashboard" element={<SiteDashboardPage />} />
                 <Route path="/regional" element={<RegionalDashboardPage />} />
                 <Route path="/ota" element={<OtaPage />} />
+                <Route path="/users" element={<UsersPage />} />
               </Routes>
             </Layout>
           </RequireAuth>

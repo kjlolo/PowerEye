@@ -22,6 +22,8 @@ from .models import (
     UserRole,
 )
 from .schemas import (
+    AdminUserCreateIn,
+    AdminUserUpdateIn,
     FirmwareReleaseIn,
     LoginRequest,
     OtaCheckRequest,
@@ -126,6 +128,16 @@ def _report_out(r: OtaReport) -> dict:
     }
 
 
+def _user_out(u: User) -> dict:
+    return {
+        "id": u.id,
+        "email": u.email,
+        "is_active": bool(u.is_active),
+        "roles": [ur.role.name for ur in u.roles],
+        "created_at": u.created_at.isoformat() if u.created_at else None,
+    }
+
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -199,6 +211,62 @@ def logout(_: User = Depends(get_current_user)) -> dict:
 @app.get("/auth/me", response_model=UserMe)
 def me(user: User = Depends(get_current_user)) -> UserMe:
     return UserMe(email=user.email, roles=[ur.role.name for ur in user.roles])
+
+
+@app.get("/admin/users")
+def admin_list_users(user: User = Depends(require_role("admin")), db: Session = Depends(get_db)) -> dict:
+    users = db.query(User).order_by(User.email.asc()).all()
+    return {"ok": True, "items": [_user_out(u) for u in users], "count": len(users), "viewer": user.email}
+
+
+@app.post("/admin/users")
+def admin_create_user(payload: AdminUserCreateIn, user: User = Depends(require_role("admin")), db: Session = Depends(get_db)) -> dict:
+    email = payload.email.strip().lower()
+    if not email:
+        raise HTTPException(status_code=400, detail="email_required")
+    if len(payload.password or "") < 8:
+        raise HTTPException(status_code=400, detail="password_min_8")
+    if len(payload.password or "") > 72:
+        raise HTTPException(status_code=400, detail="password_max_72")
+    if db.query(User).filter(User.email == email).first():
+        raise HTTPException(status_code=409, detail="user_exists")
+    role = db.query(Role).filter(Role.name == payload.role).first()
+    if not role:
+        raise HTTPException(status_code=400, detail="invalid_role")
+    u = User(email=email, password_hash=hash_password(payload.password), is_active=payload.is_active)
+    db.add(u)
+    db.commit()
+    db.refresh(u)
+    db.add(UserRole(user_id=u.id, role_id=role.id))
+    db.commit()
+    db.refresh(u)
+    write_audit(db, user.email, "admin.user.create", "user", email, detail=f"role={payload.role}")
+    return {"ok": True, "item": _user_out(u)}
+
+
+@app.patch("/admin/users/{user_id}")
+def admin_update_user(user_id: int, payload: AdminUserUpdateIn, user: User = Depends(require_role("admin")), db: Session = Depends(get_db)) -> dict:
+    u = db.query(User).filter(User.id == user_id).first()
+    if not u:
+        raise HTTPException(status_code=404, detail="user_not_found")
+    if payload.password is not None:
+        if len(payload.password) < 8:
+            raise HTTPException(status_code=400, detail="password_min_8")
+        if len(payload.password) > 72:
+            raise HTTPException(status_code=400, detail="password_max_72")
+        u.password_hash = hash_password(payload.password)
+    if payload.is_active is not None:
+        u.is_active = bool(payload.is_active)
+    if payload.role:
+        role = db.query(Role).filter(Role.name == payload.role).first()
+        if not role:
+            raise HTTPException(status_code=400, detail="invalid_role")
+        db.query(UserRole).filter(UserRole.user_id == u.id).delete()
+        db.add(UserRole(user_id=u.id, role_id=role.id))
+    db.commit()
+    db.refresh(u)
+    write_audit(db, user.email, "admin.user.update", "user", u.email, detail=str(payload.model_dump()))
+    return {"ok": True, "item": _user_out(u)}
 
 
 @app.get("/sites")

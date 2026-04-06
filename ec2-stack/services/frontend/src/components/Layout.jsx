@@ -16,6 +16,7 @@ export default function Layout({ children }) {
           <NavLink to="/regional">Regional View</NavLink>
           <NavLink to="/dashboard">Site Dashboard</NavLink>
           {isAdmin && <NavLink to="/ota">OTA Manager</NavLink>}
+          {isAdmin && <NavLink to="/users">Users</NavLink>}
         </nav>
         <div className="userline">{user?.email || "unknown user"}</div>
         <button className="danger" onClick={logout}>
