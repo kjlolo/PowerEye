@@ -59,6 +59,7 @@ def write_telemetry(site_id: str, device_id: str, data: dict) -> None:
 
     energy = data.get("energy", {}) if isinstance(data.get("energy"), dict) else {}
     fuel = data.get("fuel", {}) if isinstance(data.get("fuel"), dict) else {}
+    alarms = data.get("alarms", {}) if isinstance(data.get("alarms"), dict) else {}
     gensets = data.get("gensets", []) if isinstance(data.get("gensets"), list) else []
     battery_banks = data.get("battery_banks", []) if isinstance(data.get("battery_banks"), list) else []
 
@@ -85,6 +86,12 @@ def write_telemetry(site_id: str, device_id: str, data: dict) -> None:
     point.field("queue_pending", int(data.get("queue_pending", 0) or 0))
     point.field("rssi", int(data.get("rssi", -113) or -113))
     point.field("power_source", str(data.get("power_source", "") or ""))
+    point.field("alarm_ac_mains", bool(alarms.get("ac_mains", False)))
+    point.field("alarm_genset_run", bool(alarms.get("genset_run", False)))
+    point.field("alarm_genset_fail", bool(alarms.get("genset_fail", False)))
+    point.field("alarm_battery_theft", bool(alarms.get("battery_theft", False)))
+    point.field("alarm_power_cable_theft", bool(alarms.get("power_cable_theft", False)))
+    point.field("alarm_door_open", bool(alarms.get("door_open", False)))
 
     # Primary generator details (first online; fallback first configured).
     primary_gen = None

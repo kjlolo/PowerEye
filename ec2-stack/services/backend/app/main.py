@@ -15,6 +15,7 @@ from .models import (
     OtaTarget,
     Role,
     Site,
+    SiteSubsystemConfig,
     User,
     UserRole,
 )
@@ -26,6 +27,7 @@ from .schemas import (
     OtaReportIn,
     RefreshRequest,
     SiteIn,
+    SiteSubsystemConfigIn,
     TokenResponse,
     UserMe,
 )
@@ -41,6 +43,18 @@ from .services import (
 )
 
 app = FastAPI(title="PowerEye Control Plane", version="1.0.0")
+
+BLOCKED_REMOTE_CONFIG_KEYS = {"identity", "cloud"}
+ALLOWED_REMOTE_CONFIG_KEYS = {"rs485", "fuel", "alarms"}
+ALARM_FIELDS = {
+    "alarm_ac_mains": "AC Mains Failure",
+    "alarm_genset_run": "Genset Running",
+    "alarm_genset_fail": "Genset Fail",
+    "alarm_battery_theft": "Battery Theft",
+    "alarm_power_cable_theft": "Power Cable Theft",
+    "alarm_door_open": "Door Open",
+    "genset_any_alarm": "Generator Alarm",
+}
 
 app.add_middleware(
     CORSMiddleware,
@@ -320,12 +334,29 @@ def fleet_site_timeseries(
     hours: int = Query(6, ge=1, le=168),
     user: User = Depends(get_current_user),
 ) -> dict:
+    fields = [
+        "grid_voltage",
+        "grid_current",
+        "grid_power",
+        "grid_frequency",
+        "grid_power_factor",
+        "grid_energy_kwh",
+        "fuel_percent",
+        "fuel_liters",
+        "genset_online_count",
+        "battery_online_count",
+        "network_online",
+        "site_power_available",
+        "queue_pending",
+        "rssi",
+    ]
+    field_filter = " or ".join([f'r["_field"] == "{f}"' for f in fields])
     query = f"""
 from(bucket: "{settings.influxdb_bucket}")
   |> range(start: -{hours}h)
   |> filter(fn: (r) => r["_measurement"] == "telemetry")
   |> filter(fn: (r) => r["site_id"] == "{site_id}")
-  |> filter(fn: (r) => r["_field"] == "grid_voltage" or r["_field"] == "fuel_percent" or r["_field"] == "genset_online_count" or r["_field"] == "battery_online_count")
+  |> filter(fn: (r) => {field_filter})
 """
     client = get_influx_client()
     tables = client.query_api().query(query=query)
@@ -334,6 +365,169 @@ from(bucket: "{settings.influxdb_bucket}")
         for rec in table.records:  # type: FluxRecord
             rows.append({"time": rec.get_time().isoformat(), "field": rec.get_field(), "value": rec.get_value()})
     return {"ok": True, "items": rows, "count": len(rows), "viewer": user.email}
+
+
+@app.get("/fleet/sites/{site_id}/events")
+def fleet_site_events(
+    site_id: str,
+    hours: int = Query(24, ge=1, le=168),
+    user: User = Depends(get_current_user),
+) -> dict:
+    alarm_field_filter = " or ".join([f'r["_field"] == "{f}"' for f in ALARM_FIELDS.keys()])
+    history_query = f"""
+from(bucket: "{settings.influxdb_bucket}")
+  |> range(start: -{hours}h)
+  |> filter(fn: (r) => r["_measurement"] == "telemetry")
+  |> filter(fn: (r) => r["site_id"] == "{site_id}")
+  |> filter(fn: (r) => {alarm_field_filter})
+"""
+    active_query = f"""
+from(bucket: "{settings.influxdb_bucket}")
+  |> range(start: -24h)
+  |> filter(fn: (r) => r["_measurement"] == "telemetry")
+  |> filter(fn: (r) => r["site_id"] == "{site_id}")
+  |> filter(fn: (r) => {alarm_field_filter})
+  |> last()
+"""
+
+    client = get_influx_client()
+    history_tables = client.query_api().query(query=history_query)
+    active_tables = client.query_api().query(query=active_query)
+
+    by_field: dict[str, list[dict]] = {k: [] for k in ALARM_FIELDS.keys()}
+    for table in history_tables:
+        for rec in table.records:  # type: FluxRecord
+            field = str(rec.get_field())
+            if field not in ALARM_FIELDS:
+                continue
+            by_field[field].append(
+                {
+                    "time": rec.get_time(),
+                    "value": bool(rec.get_value()),
+                }
+            )
+
+    events: list[dict] = []
+    for field, rows in by_field.items():
+        if not rows:
+            continue
+        rows.sort(key=lambda x: x["time"])
+        previous: bool | None = None
+        for row in rows:
+            current = bool(row["value"])
+            if previous is None and current:
+                events.append(
+                    {
+                        "time": row["time"].isoformat(),
+                        "alarm_key": field,
+                        "alarm_label": ALARM_FIELDS[field],
+                        "state": "active",
+                    }
+                )
+            elif previous is not None and current != previous:
+                events.append(
+                    {
+                        "time": row["time"].isoformat(),
+                        "alarm_key": field,
+                        "alarm_label": ALARM_FIELDS[field],
+                        "state": "active" if current else "cleared",
+                    }
+                )
+            previous = current
+
+    active_map: dict[str, bool] = {}
+    for table in active_tables:
+        for rec in table.records:  # type: FluxRecord
+            field = str(rec.get_field())
+            if field in ALARM_FIELDS:
+                active_map[field] = bool(rec.get_value())
+
+    active_alarms = [
+        {
+            "alarm_key": field,
+            "alarm_label": ALARM_FIELDS[field],
+            "active": bool(active_map.get(field, False)),
+        }
+        for field in ALARM_FIELDS.keys()
+    ]
+
+    events.sort(key=lambda x: x["time"], reverse=True)
+
+    return {
+        "ok": True,
+        "site_id": site_id,
+        "active_alarms": active_alarms,
+        "history": events,
+        "count": len(events),
+        "viewer": user.email,
+    }
+
+
+@app.get("/fleet/sites/{site_id}/subsystem-config")
+def get_site_subsystem_config(
+    site_id: str,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    site = db.query(Site).filter(Site.site_id == site_id).first()
+    if not site:
+        raise HTTPException(status_code=404, detail="site_not_found")
+    item = db.query(SiteSubsystemConfig).filter(SiteSubsystemConfig.site_id == site_id).first()
+    if not item:
+        return {"ok": True, "site_id": site_id, "config": {}, "updated_by": None, "updated_at": None, "viewer": user.email}
+    return {
+        "ok": True,
+        "site_id": site_id,
+        "config": item.config_json or {},
+        "updated_by": item.updated_by,
+        "updated_at": item.updated_at.isoformat() if item.updated_at else None,
+        "viewer": user.email,
+    }
+
+
+@app.put("/fleet/sites/{site_id}/subsystem-config")
+def put_site_subsystem_config(
+    site_id: str,
+    payload: SiteSubsystemConfigIn,
+    user: User = Depends(require_role("admin")),
+    db: Session = Depends(get_db),
+) -> dict:
+    site = db.query(Site).filter(Site.site_id == site_id).first()
+    if not site:
+        raise HTTPException(status_code=404, detail="site_not_found")
+
+    cfg = payload.config or {}
+    blocked = sorted([k for k in cfg.keys() if k in BLOCKED_REMOTE_CONFIG_KEYS])
+    if blocked:
+        raise HTTPException(
+            status_code=400,
+            detail=f"blocked_keys: {','.join(blocked)} (identity/cloud cannot be changed remotely)",
+        )
+    invalid = sorted([k for k in cfg.keys() if k not in ALLOWED_REMOTE_CONFIG_KEYS])
+    if invalid:
+        raise HTTPException(
+            status_code=400,
+            detail=f"invalid_keys: {','.join(invalid)} (allowed: rs485,fuel,alarms)",
+        )
+
+    item = db.query(SiteSubsystemConfig).filter(SiteSubsystemConfig.site_id == site_id).first()
+    if not item:
+        item = SiteSubsystemConfig(site_id=site_id, config_json=cfg, updated_by=user.email, updated_at=datetime.utcnow())
+        db.add(item)
+    else:
+        item.config_json = cfg
+        item.updated_by = user.email
+        item.updated_at = datetime.utcnow()
+    db.commit()
+    db.refresh(item)
+    write_audit(db, user.email, "site.subsystem_config.update", "site", site_id, detail=str(cfg))
+    return {
+        "ok": True,
+        "site_id": site_id,
+        "config": item.config_json or {},
+        "updated_by": item.updated_by,
+        "updated_at": item.updated_at.isoformat() if item.updated_at else None,
+    }
 
 
 @app.post("/ota/firmware")

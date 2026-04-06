@@ -1,5 +1,6 @@
 from datetime import datetime
 from pydantic import BaseModel, Field
+from typing import Any
 
 
 class LoginRequest(BaseModel):
@@ -72,3 +73,7 @@ class OtaCheckRequest(BaseModel):
     device_id: str
     site_id: str
     fw_version: str = ""
+
+
+class SiteSubsystemConfigIn(BaseModel):
+    config: dict[str, Any]

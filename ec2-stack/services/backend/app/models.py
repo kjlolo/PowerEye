@@ -5,6 +5,7 @@ from sqlalchemy import (
     Float,
     ForeignKey,
     Integer,
+    JSON,
     String,
     Text,
     UniqueConstraint,
@@ -70,6 +71,15 @@ class DeviceRegistry(Base):
     transport_status: Mapped[str] = mapped_column(String(64), default="", nullable=False)
     last_error: Mapped[str] = mapped_column(Text, default="", nullable=False)
     last_seen_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
+class SiteSubsystemConfig(Base):
+    __tablename__ = "site_subsystem_configs"
+
+    site_id: Mapped[str] = mapped_column(ForeignKey("sites.site_id"), primary_key=True)
+    config_json: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    updated_by: Mapped[str] = mapped_column(String(255), default="", nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
 
 
 class FirmwareRelease(Base):
