@@ -9,13 +9,15 @@ export default function Layout({ children }) {
   return (
     <div className="app">
       <aside className="sidebar">
-        <h1>PowerEye</h1>
+        <h1>Power Eye</h1>
+        <p className="subtitle">Control Plane</p>
         <nav>
           <NavLink to="/sites">Site List</NavLink>
           <NavLink to="/regional">Regional View</NavLink>
           <NavLink to="/dashboard">Site Dashboard</NavLink>
           {isAdmin && <NavLink to="/ota">OTA Manager</NavLink>}
         </nav>
+        <div className="userline">{user?.email || "unknown user"}</div>
         <button className="danger" onClick={logout}>
           Logout
         </button>
