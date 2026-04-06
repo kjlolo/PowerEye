@@ -128,7 +128,10 @@ function formatAxisDateTime(value) {
   return `${pad(dt.getMonth() + 1)}/${pad(dt.getDate())} ${pad(dt.getHours())}:${pad(dt.getMinutes())}`;
 }
 
-function TrendCard({ title, data, fields, onToggleField }) {
+function TrendCard({ title, data, fields, onToggleField, domainStart, domainEnd }) {
+  const xDomain = Number.isFinite(domainStart) && Number.isFinite(domainEnd)
+    ? [domainStart, domainEnd]
+    : ["dataMin", "dataMax"];
   return (
     <div className="card">
       <h3>{title}</h3>
@@ -143,7 +146,13 @@ function TrendCard({ title, data, fields, onToggleField }) {
       <div className="chart-wrap">
         <ResponsiveContainer width="100%" height="100%">
           <LineChart data={data}>
-            <XAxis dataKey="ts" type="number" domain={["dataMin", "dataMax"]} tickFormatter={formatAxisDateTime} />
+            <XAxis
+              dataKey="ts"
+              type="number"
+              domain={xDomain}
+              allowDataOverflow
+              tickFormatter={formatAxisDateTime}
+            />
             <YAxis />
             <Tooltip labelFormatter={(v) => formatBrowserDateTime(v)} />
             <Legend />
@@ -176,6 +185,9 @@ export default function SiteDashboardPageV2() {
   const [trendStart, setTrendStart] = useState(toDatetimeLocalInput(new Date(now.getTime() - 24 * 60 * 60 * 1000)));
   const [trendEnd, setTrendEnd] = useState(toDatetimeLocalInput(now));
   const [trendApplied, setTrendApplied] = useState({ start: "", end: "", seq: 0 });
+  const [trendDomain, setTrendDomain] = useState({ startMs: null, endMs: null });
+  const [trendLoading, setTrendLoading] = useState(false);
+  const [trendHasLoaded, setTrendHasLoaded] = useState(false);
   const [trendFields, setTrendFields] = useState({
     grid: Object.fromEntries(TREND_GROUPS.grid.map((k) => [k, true])),
     fuel: Object.fromEntries(TREND_GROUPS.fuel.map((k) => [k, true])),
@@ -202,6 +214,8 @@ export default function SiteDashboardPageV2() {
 
   const loadSeries = async (selected, rangeOverride = null) => {
     if (!selected) return;
+    setTrendLoading(true);
+    setSeries([]);
     const params = {};
     const requestedStart = rangeOverride?.start ?? trendStart;
     const requestedEnd = rangeOverride?.end ?? trendEnd;
@@ -209,23 +223,34 @@ export default function SiteDashboardPageV2() {
     const endIso = localToIso(requestedEnd);
     if (startIso) params.start = startIso;
     if (endIso) params.end = endIso;
-    const tsRes = await api.get(`/fleet/sites/${selected}/timeseries`, { params });
-    const rows = tsRes.data.items || [];
-    const byTime = new Map();
-    rows.forEach((r) => {
-      const ts = new Date(r.time).getTime();
-      if (!Number.isFinite(ts)) return;
-      const key = String(ts);
-      const row = byTime.get(key) || { ts };
-      row[r.field] = Number(r.value);
-      byTime.set(key, row);
-    });
-    const sorted = Array.from(byTime.values()).sort((a, b) => a.ts - b.ts);
-    setSeries(sorted);
+    try {
+      const tsRes = await api.get(`/fleet/sites/${selected}/timeseries`, { params });
+      const rows = tsRes.data.items || [];
+      const byTime = new Map();
+      rows.forEach((r) => {
+        const ts = new Date(r.time).getTime();
+        if (!Number.isFinite(ts)) return;
+        const key = String(ts);
+        const row = byTime.get(key) || { ts };
+        row[r.field] = Number(r.value);
+        byTime.set(key, row);
+      });
+      const sorted = Array.from(byTime.values()).sort((a, b) => a.ts - b.ts);
+      setSeries(sorted);
+    } finally {
+      setTrendLoading(false);
+      setTrendHasLoaded(true);
+    }
   };
 
   const applyTrendRange = async () => {
     const next = { start: trendStart, end: trendEnd, seq: Date.now() };
+    const startMs = new Date(next.start).getTime();
+    const endMs = new Date(next.end).getTime();
+    setTrendDomain({
+      startMs: Number.isFinite(startMs) ? startMs : null,
+      endMs: Number.isFinite(endMs) ? endMs : null,
+    });
     setTrendApplied(next);
     await loadSeries(siteId, next);
   };
@@ -306,6 +331,16 @@ export default function SiteDashboardPageV2() {
     if (tab === "events") loadEvents(siteId);
     if (tab === "configuration") loadConfig(siteId);
   }, [tab, siteId]);
+
+  useEffect(() => {
+    if (tab !== "trends") return;
+    const startMs = new Date(trendStart).getTime();
+    const endMs = new Date(trendEnd).getTime();
+    setTrendDomain({
+      startMs: Number.isFinite(startMs) ? startMs : null,
+      endMs: Number.isFinite(endMs) ? endMs : null,
+    });
+  }, [tab]);
 
   useEffect(() => {
     if (tab !== "trends") return;
@@ -471,11 +506,54 @@ export default function SiteDashboardPageV2() {
           </div>
 
           <div className="chart-grid">
-            <TrendCard title="Grid" data={series} fields={asFieldEntries("grid")} onToggleField={(k) => toggleTrendField("grid", k)} />
-            <TrendCard title="Fuel" data={series} fields={asFieldEntries("fuel")} onToggleField={(k) => toggleTrendField("fuel", k)} />
-            <TrendCard title="Generator" data={series} fields={asFieldEntries("generator")} onToggleField={(k) => toggleTrendField("generator", k)} />
-            <TrendCard title="Batteries" data={series} fields={asFieldEntries("batteries")} onToggleField={(k) => toggleTrendField("batteries", k)} />
-            <TrendCard title="Power Availability" data={series} fields={asFieldEntries("availability")} onToggleField={(k) => toggleTrendField("availability", k)} />
+            {trendLoading ? (
+              <div className="card"><div className="meta-line">Loading trend data...</div></div>
+            ) : trendHasLoaded && series.length === 0 ? (
+              <div className="card"><div className="meta-line">No data for the selected date range.</div></div>
+            ) : (
+              <>
+                <TrendCard
+                  title="Grid"
+                  data={series}
+                  fields={asFieldEntries("grid")}
+                  onToggleField={(k) => toggleTrendField("grid", k)}
+                  domainStart={trendDomain.startMs}
+                  domainEnd={trendDomain.endMs}
+                />
+                <TrendCard
+                  title="Fuel"
+                  data={series}
+                  fields={asFieldEntries("fuel")}
+                  onToggleField={(k) => toggleTrendField("fuel", k)}
+                  domainStart={trendDomain.startMs}
+                  domainEnd={trendDomain.endMs}
+                />
+                <TrendCard
+                  title="Generator"
+                  data={series}
+                  fields={asFieldEntries("generator")}
+                  onToggleField={(k) => toggleTrendField("generator", k)}
+                  domainStart={trendDomain.startMs}
+                  domainEnd={trendDomain.endMs}
+                />
+                <TrendCard
+                  title="Batteries"
+                  data={series}
+                  fields={asFieldEntries("batteries")}
+                  onToggleField={(k) => toggleTrendField("batteries", k)}
+                  domainStart={trendDomain.startMs}
+                  domainEnd={trendDomain.endMs}
+                />
+                <TrendCard
+                  title="Power Availability"
+                  data={series}
+                  fields={asFieldEntries("availability")}
+                  onToggleField={(k) => toggleTrendField("availability", k)}
+                  domainStart={trendDomain.startMs}
+                  domainEnd={trendDomain.endMs}
+                />
+              </>
+            )}
           </div>
         </>
       )}
