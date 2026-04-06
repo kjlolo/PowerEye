@@ -178,6 +178,7 @@ export default function SiteDashboardPageV2() {
   const [series, setSeries] = useState([]);
   const [tab, setTab] = useState("overview");
   const [events, setEvents] = useState({ active_alarms: [], history: [] });
+  const [gensetControlMsg, setGensetControlMsg] = useState("");
   const [configForm, setConfigForm] = useState(defaultConfigForm());
   const [configMeta, setConfigMeta] = useState({ updated_by: null, updated_at: null });
   const [configMsg, setConfigMsg] = useState("");
@@ -382,9 +383,7 @@ export default function SiteDashboardPageV2() {
   const fuelPercent = Number(values.fuel_percent ?? 0);
   const fuelLiters = Number(values.fuel_liters ?? 0);
   const gensetOnline = Number(values.genset_online_count ?? 0);
-  const batteryOnline = Number(values.battery_online_count ?? 0);
   const batteryBanksConfigured = Number(values.battery_bank_count_configured ?? 0);
-  const batteryLowSocCount = Number(values.battery_low_soc_count ?? 0);
   const heartbeatOnline = !!live?.network_heartbeat_online;
   const lastTelemetryAt = live?.last_telemetry_at ? new Date(live.last_telemetry_at).toLocaleString() : "-";
   const telemetryAgeSec = live?.last_telemetry_age_sec;
@@ -404,15 +403,6 @@ export default function SiteDashboardPageV2() {
   const gridCardState = gridOnline ? "ok" : "fault";
   const fuelCardState = fuelOnline ? "ok" : "fault";
   const gensetCardState = gensetOnline > 0 ? (gensetAlarm ? "warn" : "ok") : "fault";
-  const batteryCardState = batteryOnline > 0 ? (batteryLowSocCount > 0 ? "warn" : "ok") : "fault";
-
-  const rsRows = [
-    { name: "RS1", onlineCount: Number(values.rs1_online_count ?? 0), avgSoc: Number(values.rs1_avg_soc ?? 0) },
-    { name: "RS2", onlineCount: Number(values.rs2_online_count ?? 0), avgSoc: Number(values.rs2_avg_soc ?? 0) },
-    { name: "RS3", onlineCount: Number(values.rs3_online_count ?? 0), avgSoc: Number(values.rs3_avg_soc ?? 0) },
-    { name: "RS4", onlineCount: Number(values.rs4_online_count ?? 0), avgSoc: Number(values.rs4_avg_soc ?? 0) },
-  ];
-
   const bankCount = Math.max(0, Math.min(16, batteryBanksConfigured || 0));
   const bankRows = Array.from({ length: bankCount }, (_, i) => {
     const idx = i + 1;
@@ -430,6 +420,11 @@ export default function SiteDashboardPageV2() {
     rs,
     items: bankRows.filter((b) => b.rectifier === rs),
   })).filter((g) => g.items.length > 0);
+
+  const requestGensetControl = (action) => {
+    // UI is ready; command-plane API wiring follows in the next patch.
+    setGensetControlMsg(`Command requested: ${action}. Command dispatch API not yet wired.`);
+  };
 
   return (
     <div>
@@ -552,36 +547,24 @@ export default function SiteDashboardPageV2() {
                 <MetricRow label="Voltage" value={`${Number(values.genset_voltage ?? 0).toFixed(1)} V`} />
                 <MetricRow label="Battery Voltage" value={`${Number(values.genset_battery_voltage ?? 0).toFixed(2)} V`} />
                 <MetricRow label="Current" value={`${Number(values.genset_current ?? 0).toFixed(2)} A`} />
+                <MetricRow label="Engine Temp" value={`${Number(values.genset_engine_temp_c ?? 0).toFixed(1)} C`} />
+                <MetricRow label="Oil Pressure" value={`${Number(values.genset_oil_pressure_kpa ?? 0).toFixed(1)} kPa`} />
+                <MetricRow label="Fuel Level" value={`${Number(values.genset_fuel_level_percent ?? 0).toFixed(1)} %`} />
+                <MetricRow label="Active Power" value={`${Number(values.genset_active_power_kw ?? 0).toFixed(2)} kW`} />
+                <MetricRow label="Apparent Power" value={`${Number(values.genset_apparent_power_kva ?? 0).toFixed(2)} kVA`} />
                 <MetricRow label="Run Hours" value={`${Number(values.genset_run_hours ?? 0).toFixed(0)}`} />
               </div>
-            </div>
-            <div className={`card card-state-${batteryCardState}`}>
-              <h3>Batteries</h3>
-              <div className="meta-line">Updated: {lastTelemetryAt}</div>
-              <div className="metric-list">
-                <MetricRow label="Status" value={<StatusChip online={batteryOnline > 0} />} />
-                <MetricRow label="Online Banks" value={`${batteryOnline} / ${batteryBanksConfigured}`} />
-                <MetricRow label="Low SOC Count" value={`${batteryLowSocCount}`} />
-                <MetricRow label="Power Source" value={powerSource.toUpperCase()} />
+              <div className="meta-line" style={{ marginTop: 12 }}>Genset Control</div>
+              <div className="row">
+                <button type="button" className="secondary" onClick={() => requestGensetControl("start")}>Start</button>
+                <button type="button" className="secondary danger" onClick={() => requestGensetControl("stop")}>Stop</button>
               </div>
-              <table>
-                <thead>
-                  <tr>
-                    <th>Rectifier</th>
-                    <th>Online Banks</th>
-                    <th>Avg SOC</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {rsRows.map((r) => (
-                    <tr key={r.name}>
-                      <td>{r.name}</td>
-                      <td>{r.onlineCount}</td>
-                      <td>{`${r.avgSoc.toFixed(1)} %`}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+              <div className="row" style={{ marginTop: 6 }}>
+                <button type="button" className="secondary" onClick={() => requestGensetControl("mode:auto")}>Auto</button>
+                <button type="button" className="secondary" onClick={() => requestGensetControl("mode:manual")}>Manual</button>
+                <button type="button" className="secondary" onClick={() => requestGensetControl("mode:test")}>Test</button>
+              </div>
+              {gensetControlMsg ? <div className="meta-line">{gensetControlMsg}</div> : null}
             </div>
           </div>
 

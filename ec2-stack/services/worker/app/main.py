@@ -157,6 +157,11 @@ def write_telemetry(site_id: str, device_id: str, data: dict) -> None:
         point.field("genset_battery_voltage", float(primary_gen.get("battery_voltage", 0.0) or 0.0))
         point.field("genset_current", float(primary_gen.get("current_a", 0.0) or 0.0))
         point.field("genset_run_hours", int(primary_gen.get("run_hours", 0) or 0))
+        point.field("genset_engine_temp_c", float(primary_gen.get("engine_temp_c", 0.0) or 0.0))
+        point.field("genset_oil_pressure_kpa", float(primary_gen.get("oil_pressure_kpa", 0.0) or 0.0))
+        point.field("genset_fuel_level_percent", float(primary_gen.get("fuel_level_percent", 0.0) or 0.0))
+        point.field("genset_active_power_kw", float(primary_gen.get("active_power_kw", 0.0) or 0.0))
+        point.field("genset_apparent_power_kva", float(primary_gen.get("apparent_power_kva", 0.0) or 0.0))
 
     # Battery per-rectifier summary (4 banks per rectifier, up to RS1..RS4).
     rs_online = {1: 0, 2: 0, 3: 0, 4: 0}
