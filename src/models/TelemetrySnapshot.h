@@ -19,6 +19,10 @@ struct TelemetrySnapshot {
   String fwVersion;
   String transportStatus;
   String lastError;
+  bool cfgPzemEnabled = true;
+  bool cfgGeneratorEnabled = false;
+  bool cfgBatteryEnabled = false;
+  bool cfgFuelEnabled = true;
 
   EnergyData energy;
   uint8_t gensetCountConfigured = 0;

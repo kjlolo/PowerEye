@@ -293,6 +293,16 @@ export default function SiteDashboardPageV2() {
     if (cfg.fuel) merged.fuel = { ...merged.fuel, ...cfg.fuel };
     if (cfg.alarms) merged.alarms = { ...merged.alarms, ...cfg.alarms };
     if (cfg.power_availability) merged.power_availability = { ...merged.power_availability, ...cfg.power_availability };
+
+    // Reflect device-reported runtime configuration when telemetry is available.
+    const lv = live?.values || {};
+    if (typeof lv.cfg_pzem_enabled === "boolean") merged.rs485.pzem_enabled = !!lv.cfg_pzem_enabled;
+    if (typeof lv.cfg_generator_enabled === "boolean") merged.rs485.generator_enabled = !!lv.cfg_generator_enabled;
+    if (typeof lv.cfg_battery_enabled === "boolean") merged.rs485.battery_enabled = !!lv.cfg_battery_enabled;
+    if (typeof lv.cfg_fuel_enabled === "boolean") merged.fuel.enabled = !!lv.cfg_fuel_enabled;
+    if (Number.isFinite(Number(lv.genset_count_configured))) merged.rs485.generator_count = Number(lv.genset_count_configured);
+    if (Number.isFinite(Number(lv.battery_bank_count_configured))) merged.rs485.battery_bank_count = Number(lv.battery_bank_count_configured);
+
     setConfigForm(merged);
     setConfigMeta({ updated_by: data.updated_by || null, updated_at: data.updated_at || null });
   };
@@ -405,7 +415,7 @@ export default function SiteDashboardPageV2() {
   return (
     <div>
       <div className="topbar">
-        <h2>Per-Site Dashboard</h2>
+        <h2>Site Dashboard</h2>
         <div className="row">
           <select value={siteId} onChange={(e) => setSiteId(e.target.value)}>
             {sites.map((s) => (
@@ -674,11 +684,14 @@ export default function SiteDashboardPageV2() {
           <div className="section-title">Active Alarms</div>
           <div className="card">
             <div className="alarm-chip-row">
-              {(events.active_alarms || []).map((a) => (
+              {(events.active_alarms || []).filter((a) => a.active).map((a) => (
                 <span key={a.alarm_key} className={`status-chip ${a.active ? "warn" : "online"}`}>
                   {a.alarm_label}: {a.active ? "ACTIVE" : "CLEAR"}
                 </span>
               ))}
+              {(events.active_alarms || []).filter((a) => a.active).length === 0 ? (
+                <span className="meta-line">No active alarms.</span>
+              ) : null}
             </div>
             <div className="row form-actions">
               <button type="button" className="secondary" onClick={() => loadEvents(siteId)}>Refresh Events</button>

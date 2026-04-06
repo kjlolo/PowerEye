@@ -326,6 +326,10 @@ void SiteController::updateSnapshot() {
   _snapshot.fwVersion = AppConfig::FW_VERSION;
   _snapshot.transportStatus = _lastTransportStatus;
   _snapshot.lastError = _lastPublishError;
+  _snapshot.cfgPzemEnabled = _config.rs485.pzemEnabled;
+  _snapshot.cfgGeneratorEnabled = _config.rs485.generatorEnabled;
+  _snapshot.cfgBatteryEnabled = _config.rs485.batteryEnabled;
+  _snapshot.cfgFuelEnabled = _config.fuel.enabled;
   _snapshot.energy = _pzem.data();
   _snapshot.gensetCountConfigured = _config.rs485.generatorCount > Rs485Config::MAX_GENERATORS
     ? Rs485Config::MAX_GENERATORS

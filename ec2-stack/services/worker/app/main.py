@@ -99,6 +99,21 @@ def write_telemetry(site_id: str, device_id: str, data: dict) -> None:
     point.field("alarm_power_cable_theft", bool(alarms.get("power_cable_theft", False)))
     point.field("alarm_door_open", bool(alarms.get("door_open", False)))
 
+    cfg_pzem_enabled = bool(data.get("cfg_pzem_enabled", True))
+    cfg_generator_enabled = bool(data.get("cfg_generator_enabled", False))
+    cfg_battery_enabled = bool(data.get("cfg_battery_enabled", False))
+    cfg_fuel_enabled = bool(data.get("cfg_fuel_enabled", True))
+    point.field("cfg_pzem_enabled", cfg_pzem_enabled)
+    point.field("cfg_generator_enabled", cfg_generator_enabled)
+    point.field("cfg_battery_enabled", cfg_battery_enabled)
+    point.field("cfg_fuel_enabled", cfg_fuel_enabled)
+
+    # Offline alarms are only active when the corresponding subsystem is enabled.
+    point.field("alarm_grid_offline", cfg_pzem_enabled and (not bool(energy.get("online", False))))
+    point.field("alarm_fuel_offline", cfg_fuel_enabled and (not bool(fuel.get("online", False))))
+    point.field("alarm_genset_offline", cfg_generator_enabled and int(data.get("genset_online_count", 0) or 0) <= 0)
+    point.field("alarm_battery_offline", cfg_battery_enabled and int(data.get("battery_online_count", 0) or 0) <= 0)
+
     # Primary generator details (first online; fallback first configured).
     primary_gen = None
     for g in gensets:

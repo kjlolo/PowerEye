@@ -15,6 +15,10 @@ String TelemetryBuilder::buildJson(const TelemetrySnapshot& snapshot, bool compl
   doc["network_online"] = snapshot.networkOnline;
   doc["transport_status"] = snapshot.transportStatus;
   doc["last_error"] = snapshot.lastError;
+  doc["cfg_pzem_enabled"] = snapshot.cfgPzemEnabled;
+  doc["cfg_generator_enabled"] = snapshot.cfgGeneratorEnabled;
+  doc["cfg_battery_enabled"] = snapshot.cfgBatteryEnabled;
+  doc["cfg_fuel_enabled"] = snapshot.cfgFuelEnabled;
   doc["fuel_sensor_online"] = snapshot.fuel.online;
   doc["fuel_sensor_status"] = snapshot.fuel.online ? "online" : "offline";
 

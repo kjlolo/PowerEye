@@ -54,6 +54,10 @@ ALARM_FIELDS = {
     "alarm_power_cable_theft": "Power Cable Theft",
     "alarm_door_open": "Door Open",
     "genset_any_alarm": "Generator Alarm",
+    "alarm_grid_offline": "Grid Subsystem Offline",
+    "alarm_fuel_offline": "Fuel Subsystem Offline",
+    "alarm_genset_offline": "Generator Subsystem Offline",
+    "alarm_battery_offline": "Battery Subsystem Offline",
 }
 
 app.add_middleware(
@@ -275,6 +279,10 @@ def fleet_site_live(
         "battery_discharging_count",
         "battery_charging_count",
         "battery_discharging_active",
+        "cfg_pzem_enabled",
+        "cfg_generator_enabled",
+        "cfg_battery_enabled",
+        "cfg_fuel_enabled",
         "battery_bank_count_configured",
         "battery_low_soc_count",
         "rs1_online_count",
