@@ -78,6 +78,54 @@ ALARM_SEVERITY = {
     "alarm_battery_offline": "major",
 }
 
+
+def _release_out(rel: FirmwareRelease) -> dict:
+    return {
+        "id": rel.id,
+        "version": rel.version,
+        "s3_key": rel.s3_key,
+        "sha256": rel.sha256,
+        "notes": rel.notes,
+        "created_by": rel.created_by,
+        "created_at": rel.created_at.isoformat() if rel.created_at else None,
+    }
+
+
+def _job_out(job: OtaJob) -> dict:
+    return {
+        "id": job.id,
+        "firmware_version": job.firmware_version,
+        "target_scope": job.target_scope,
+        "target_value": job.target_value,
+        "status": job.status,
+        "created_by": job.created_by,
+        "created_at": job.created_at.isoformat() if job.created_at else None,
+    }
+
+
+def _target_out(t: OtaTarget) -> dict:
+    return {
+        "id": t.id,
+        "job_id": t.job_id,
+        "device_id": t.device_id,
+        "site_id": t.site_id,
+        "status": t.status,
+        "updated_at": t.updated_at.isoformat() if t.updated_at else None,
+    }
+
+
+def _report_out(r: OtaReport) -> dict:
+    return {
+        "id": r.id,
+        "job_id": r.job_id,
+        "device_id": r.device_id,
+        "site_id": r.site_id,
+        "status": r.status,
+        "detail": r.detail,
+        "reported_at": r.reported_at.isoformat() if r.reported_at else None,
+    }
+
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -749,7 +797,7 @@ def create_firmware_release(payload: FirmwareReleaseIn, user: User = Depends(req
     db.commit()
     db.refresh(rel)
     write_audit(db, user.email, "ota.release.create", "firmware_release", payload.version)
-    return {"ok": True, "item": rel, "upload_url": upload_url}
+    return {"ok": True, "item": _release_out(rel), "upload_url": upload_url}
 
 
 @app.get("/ota/firmware")
@@ -828,7 +876,7 @@ def create_ota_job(payload: OtaJobIn, user: User = Depends(require_role("admin")
     devices = resolve_target_devices(db, payload.target_scope, payload.target_value)
     assign_ota_targets(db, job, devices)
     write_audit(db, user.email, "ota.job.create", "ota_job", str(job.id), detail=f"targets={len(devices)}")
-    return {"ok": True, "item": job, "target_count": len(devices)}
+    return {"ok": True, "item": _job_out(job), "target_count": len(devices)}
 
 
 @app.get("/ota/jobs")
@@ -838,7 +886,7 @@ def list_ota_jobs(user: User = Depends(require_role("admin")), db: Session = Dep
     for job in items:
         total = db.query(OtaTarget).filter(OtaTarget.job_id == job.id).count()
         done = db.query(OtaTarget).filter(OtaTarget.job_id == job.id, OtaTarget.status.in_(["success", "failed"])).count()
-        out.append({"job": job, "total_targets": total, "completed_targets": done})
+        out.append({"job": _job_out(job), "total_targets": total, "completed_targets": done})
     return {"ok": True, "items": out, "count": len(out), "viewer": user.email}
 
 
@@ -848,7 +896,7 @@ def get_ota_job(job_id: int, user: User = Depends(require_role("admin")), db: Se
     if not job:
         raise HTTPException(status_code=404, detail="job_not_found")
     targets = db.query(OtaTarget).filter(OtaTarget.job_id == job_id).all()
-    return {"ok": True, "item": job, "targets": targets, "viewer": user.email}
+    return {"ok": True, "item": _job_out(job), "targets": [_target_out(t) for t in targets], "viewer": user.email}
 
 
 @app.get("/ota/jobs/{job_id}/reports")
@@ -857,7 +905,7 @@ def get_ota_job_reports(job_id: int, user: User = Depends(require_role("admin"))
     if not job:
         raise HTTPException(status_code=404, detail="job_not_found")
     items = db.query(OtaReport).filter(OtaReport.job_id == job_id).order_by(OtaReport.reported_at.desc()).limit(500).all()
-    return {"ok": True, "items": items, "count": len(items), "viewer": user.email}
+    return {"ok": True, "items": [_report_out(r) for r in items], "count": len(items), "viewer": user.email}
 
 
 @app.post("/ota/jobs/{job_id}/cancel")
@@ -868,7 +916,7 @@ def cancel_ota_job(job_id: int, user: User = Depends(require_role("admin")), db:
     job.status = "cancelled"
     db.commit()
     write_audit(db, user.email, "ota.job.cancel", "ota_job", str(job_id))
-    return {"ok": True, "item": job}
+    return {"ok": True, "item": _job_out(job)}
 
 
 @app.delete("/ota/firmware/{version}")
@@ -939,4 +987,4 @@ def ota_check(
 @app.post("/ota/report")
 def ota_report(payload: OtaReportIn, job_id: int | None = None, db: Session = Depends(get_db)) -> dict:
     report = upsert_ota_report(db, payload.device_id, payload.site_id, payload.status, payload.detail, job_id=job_id)
-    return {"ok": True, "item": report}
+    return {"ok": True, "item": _report_out(report)}
