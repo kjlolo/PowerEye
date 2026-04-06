@@ -20,11 +20,11 @@ def _get_s3_client():
     return boto3.client("s3", **kwargs)
 
 
-def make_presigned_put_url(s3_key: str, content_type: str = "application/octet-stream") -> str:
+def make_presigned_put_url(s3_key: str) -> str:
     s3 = _get_s3_client()
     return s3.generate_presigned_url(
         "put_object",
-        Params={"Bucket": settings.s3_firmware_bucket, "Key": s3_key, "ContentType": content_type},
+        Params={"Bucket": settings.s3_firmware_bucket, "Key": s3_key},
         ExpiresIn=settings.s3_signed_url_expiry_sec,
     )
 

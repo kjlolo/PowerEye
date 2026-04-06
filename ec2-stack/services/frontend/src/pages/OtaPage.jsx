@@ -61,7 +61,6 @@ export default function OtaPage() {
       setMessage("Uploading firmware binary to S3...");
       const putResp = await fetch(data.upload_url, {
         method: "PUT",
-        headers: { "Content-Type": "application/octet-stream" },
         body: firmwareFile,
       });
       if (!putResp.ok) {
