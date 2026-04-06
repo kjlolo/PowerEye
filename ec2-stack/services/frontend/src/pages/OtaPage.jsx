@@ -7,8 +7,13 @@ export default function OtaPage() {
   const isAdmin = useMemo(() => (user?.roles || []).includes("admin"), [user]);
   const [releases, setReleases] = useState([]);
   const [jobs, setJobs] = useState([]);
+  const [reports, setReports] = useState([]);
+  const [selectedJobId, setSelectedJobId] = useState(null);
   const [releaseForm, setReleaseForm] = useState({ version: "", filename: "", sha256: "", notes: "" });
   const [jobForm, setJobForm] = useState({ firmware_version: "", target_scope: "all", target_value: "" });
+  const [firmwareFile, setFirmwareFile] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState("");
 
   const load = async () => {
     const [r1, r2] = await Promise.all([api.get("/ota/firmware"), api.get("/ota/jobs")]);
@@ -20,24 +25,90 @@ export default function OtaPage() {
     load();
   }, []);
 
+  const formatBytes = (v) => {
+    const n = Number(v || 0);
+    if (!n) return "0 B";
+    if (n < 1024) return `${n} B`;
+    if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+    return `${(n / (1024 * 1024)).toFixed(2)} MB`;
+  };
+
+  const computeSha256 = async (file) => {
+    const buf = await file.arrayBuffer();
+    const hash = await crypto.subtle.digest("SHA-256", buf);
+    const bytes = Array.from(new Uint8Array(hash));
+    return bytes.map((b) => b.toString(16).padStart(2, "0")).join("");
+  };
+
   const createRelease = async (e) => {
     e.preventDefault();
-    const { data } = await api.post("/ota/firmware", releaseForm);
-    alert(`Upload firmware binary to this signed URL:\n${data.upload_url}`);
-    setReleaseForm({ version: "", filename: "", sha256: "", notes: "" });
-    await load();
+    if (!firmwareFile) {
+      setMessage("Select a firmware .bin file first.");
+      return;
+    }
+    try {
+      setBusy(true);
+      setMessage("Preparing release...");
+      const filename = releaseForm.filename || firmwareFile.name;
+      const sha256 = releaseForm.sha256 || (await computeSha256(firmwareFile));
+      const payload = {
+        version: releaseForm.version.trim(),
+        filename,
+        sha256,
+        notes: releaseForm.notes || "",
+      };
+      const { data } = await api.post("/ota/firmware", payload);
+      setMessage("Uploading firmware binary to S3...");
+      const putResp = await fetch(data.upload_url, {
+        method: "PUT",
+        headers: { "Content-Type": "application/octet-stream" },
+        body: firmwareFile,
+      });
+      if (!putResp.ok) {
+        throw new Error(`Firmware upload failed (${putResp.status})`);
+      }
+      setReleaseForm({ version: "", filename: "", sha256: "", notes: "" });
+      setFirmwareFile(null);
+      setMessage("Release created and binary uploaded.");
+      await load();
+    } catch (err) {
+      setMessage(err?.response?.data?.detail || err?.message || "Failed to create firmware release.");
+    } finally {
+      setBusy(false);
+    }
   };
 
   const createJob = async (e) => {
     e.preventDefault();
-    await api.post("/ota/jobs", jobForm);
-    setJobForm({ firmware_version: "", target_scope: "all", target_value: "" });
-    await load();
+    try {
+      setBusy(true);
+      setMessage("Creating OTA job...");
+      await api.post("/ota/jobs", jobForm);
+      setJobForm({ firmware_version: "", target_scope: "all", target_value: "" });
+      setMessage("OTA job created.");
+      await load();
+    } catch (err) {
+      setMessage(err?.response?.data?.detail || err?.message || "Failed to create OTA job.");
+    } finally {
+      setBusy(false);
+    }
   };
 
   const cancelJob = async (id) => {
-    await api.post(`/ota/jobs/${id}/cancel`);
-    await load();
+    try {
+      setBusy(true);
+      await api.post(`/ota/jobs/${id}/cancel`);
+      setMessage(`OTA job ${id} cancelled.`);
+      await load();
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const loadReports = async (id) => {
+    setSelectedJobId(id);
+    const { data } = await api.get(`/ota/jobs/${id}/reports`);
+    setReports(data.items || []);
   };
 
   if (!isAdmin) {
@@ -47,14 +118,26 @@ export default function OtaPage() {
   return (
     <div>
       <h2>OTA Manager</h2>
+      {message && <div className="card"><div className="value-line">{message}</div></div>}
 
       <form className="card form-grid" onSubmit={createRelease}>
         <h3>Upload Firmware Release</h3>
-        <input placeholder="Version (e.g. 1.0.4)" value={releaseForm.version} onChange={(e) => setReleaseForm({ ...releaseForm, version: e.target.value })} />
-        <input placeholder="Filename (.bin)" value={releaseForm.filename} onChange={(e) => setReleaseForm({ ...releaseForm, filename: e.target.value })} />
-        <input placeholder="SHA256" value={releaseForm.sha256} onChange={(e) => setReleaseForm({ ...releaseForm, sha256: e.target.value })} />
+        <input required placeholder="Version (e.g. 1.0.4)" value={releaseForm.version} onChange={(e) => setReleaseForm({ ...releaseForm, version: e.target.value })} />
+        <input placeholder="Filename (.bin) (optional)" value={releaseForm.filename} onChange={(e) => setReleaseForm({ ...releaseForm, filename: e.target.value })} />
+        <input placeholder="SHA256 (optional, auto if blank)" value={releaseForm.sha256} onChange={(e) => setReleaseForm({ ...releaseForm, sha256: e.target.value })} />
         <input placeholder="Release notes" value={releaseForm.notes} onChange={(e) => setReleaseForm({ ...releaseForm, notes: e.target.value })} />
-        <button type="submit">Create Release + Get Upload URL</button>
+        <input
+          type="file"
+          accept=".bin,application/octet-stream"
+          onChange={(e) => {
+            const f = e.target.files?.[0] || null;
+            setFirmwareFile(f);
+            if (f && !releaseForm.filename) {
+              setReleaseForm((prev) => ({ ...prev, filename: f.name }));
+            }
+          }}
+        />
+        <button type="submit" disabled={busy}>{busy ? "Working..." : "Create Release + Upload Binary"}</button>
       </form>
 
       <form className="card form-grid" onSubmit={createJob}>
@@ -78,8 +161,34 @@ export default function OtaPage() {
           value={jobForm.target_value}
           onChange={(e) => setJobForm({ ...jobForm, target_value: e.target.value })}
         />
-        <button type="submit">Create OTA Job</button>
+        <button type="submit" disabled={busy}>{busy ? "Working..." : "Create OTA Job"}</button>
       </form>
+
+      <div className="card">
+        <h3>Firmware Releases</h3>
+        <table>
+          <thead>
+            <tr>
+              <th>Version</th>
+              <th>Uploaded</th>
+              <th>Size</th>
+              <th>Created</th>
+              <th>Notes</th>
+            </tr>
+          </thead>
+          <tbody>
+            {releases.map((r) => (
+              <tr key={r.id || r.version}>
+                <td>{r.version}</td>
+                <td>{r.uploaded ? "Yes" : "No"}</td>
+                <td>{formatBytes(r.size_bytes)}</td>
+                <td>{r.created_at ? new Date(r.created_at).toLocaleString() : "-"}</td>
+                <td>{r.notes || "-"}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
 
       <div className="card">
         <h3>OTA Jobs</h3>
@@ -92,6 +201,7 @@ export default function OtaPage() {
               <th>Target</th>
               <th>Status</th>
               <th>Progress</th>
+              <th>Reports</th>
               <th>Actions</th>
             </tr>
           </thead>
@@ -107,6 +217,9 @@ export default function OtaPage() {
                   {x.completed_targets}/{x.total_targets}
                 </td>
                 <td>
+                  <button onClick={() => loadReports(x.job.id)}>View</button>
+                </td>
+                <td>
                   <button className="danger" onClick={() => cancelJob(x.job.id)}>
                     Cancel
                   </button>
@@ -116,6 +229,34 @@ export default function OtaPage() {
           </tbody>
         </table>
       </div>
+
+      {selectedJobId && (
+        <div className="card">
+          <h3>Job Reports #{selectedJobId}</h3>
+          <table>
+            <thead>
+              <tr>
+                <th>Time</th>
+                <th>Device</th>
+                <th>Site</th>
+                <th>Status</th>
+                <th>Detail</th>
+              </tr>
+            </thead>
+            <tbody>
+              {reports.map((r) => (
+                <tr key={r.id}>
+                  <td>{r.reported_at ? new Date(r.reported_at).toLocaleString() : "-"}</td>
+                  <td>{r.device_id}</td>
+                  <td>{r.site_id}</td>
+                  <td>{r.status}</td>
+                  <td>{r.detail || "-"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 }

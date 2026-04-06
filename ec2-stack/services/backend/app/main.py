@@ -12,6 +12,7 @@ from .models import (
     DeviceRegistry,
     FirmwareRelease,
     OtaJob,
+    OtaReport,
     OtaTarget,
     Role,
     Site,
@@ -34,6 +35,7 @@ from .schemas import (
 from .security import create_access_token, create_refresh_token, decode_token, hash_password, verify_password
 from .services import (
     assign_ota_targets,
+    get_s3_object_meta,
     get_influx_client,
     make_presigned_get_url,
     make_presigned_put_url,
@@ -737,15 +739,52 @@ def create_firmware_release(payload: FirmwareReleaseIn, user: User = Depends(req
 
 @app.get("/ota/firmware")
 def list_firmware(user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> dict:
-    items = db.query(FirmwareRelease).order_by(FirmwareRelease.created_at.desc()).all()
+    rows = db.query(FirmwareRelease).order_by(FirmwareRelease.created_at.desc()).all()
+    items: list[dict] = []
+    for rel in rows:
+        meta = get_s3_object_meta(rel.s3_key)
+        items.append(
+            {
+                "id": rel.id,
+                "version": rel.version,
+                "s3_key": rel.s3_key,
+                "sha256": rel.sha256,
+                "notes": rel.notes,
+                "created_by": rel.created_by,
+                "created_at": rel.created_at,
+                "uploaded": bool(meta),
+                "size_bytes": int(meta["size_bytes"]) if meta else 0,
+                "uploaded_at": meta["last_modified"] if meta else None,
+            }
+        )
     return {"ok": True, "items": items, "count": len(items), "viewer": user.email}
+
+
+@app.get("/ota/firmware/{version}/upload-status")
+def ota_firmware_upload_status(version: str, user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> dict:
+    rel = db.query(FirmwareRelease).filter(FirmwareRelease.version == version).first()
+    if not rel:
+        raise HTTPException(status_code=404, detail="firmware_not_found")
+    meta = get_s3_object_meta(rel.s3_key)
+    return {
+        "ok": True,
+        "version": version,
+        "uploaded": bool(meta),
+        "size_bytes": int(meta["size_bytes"]) if meta else 0,
+        "uploaded_at": meta["last_modified"] if meta else None,
+        "viewer": user.email,
+    }
 
 
 @app.post("/ota/jobs")
 def create_ota_job(payload: OtaJobIn, user: User = Depends(require_role("admin")), db: Session = Depends(get_db)) -> dict:
+    if payload.target_scope != "all" and not payload.target_value.strip():
+        raise HTTPException(status_code=400, detail="target_value_required_for_scope")
     release = db.query(FirmwareRelease).filter(FirmwareRelease.version == payload.firmware_version).first()
     if not release:
         raise HTTPException(status_code=404, detail="firmware_not_found")
+    if not get_s3_object_meta(release.s3_key):
+        raise HTTPException(status_code=400, detail="firmware_binary_not_uploaded")
     job = OtaJob(
         firmware_version=payload.firmware_version,
         target_scope=payload.target_scope,
@@ -780,6 +819,15 @@ def get_ota_job(job_id: int, user: User = Depends(get_current_user), db: Session
         raise HTTPException(status_code=404, detail="job_not_found")
     targets = db.query(OtaTarget).filter(OtaTarget.job_id == job_id).all()
     return {"ok": True, "item": job, "targets": targets, "viewer": user.email}
+
+
+@app.get("/ota/jobs/{job_id}/reports")
+def get_ota_job_reports(job_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> dict:
+    job = db.query(OtaJob).filter(OtaJob.id == job_id).first()
+    if not job:
+        raise HTTPException(status_code=404, detail="job_not_found")
+    items = db.query(OtaReport).filter(OtaReport.job_id == job_id).order_by(OtaReport.reported_at.desc()).limit(500).all()
+    return {"ok": True, "items": items, "count": len(items), "viewer": user.email}
 
 
 @app.post("/ota/jobs/{job_id}/cancel")
