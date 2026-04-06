@@ -145,7 +145,7 @@ function TrendCard({ title, data, fields, onToggleField, domainStart, domainEnd 
       </div>
       <div className="chart-wrap">
         <ResponsiveContainer width="100%" height="100%">
-          <LineChart data={data}>
+          <LineChart data={data} syncId="site-trends">
             <XAxis
               dataKey="ts"
               type="number"
@@ -245,6 +245,24 @@ export default function SiteDashboardPageV2() {
 
   const applyTrendRange = async () => {
     const next = { start: trendStart, end: trendEnd, seq: Date.now() };
+    const startMs = new Date(next.start).getTime();
+    const endMs = new Date(next.end).getTime();
+    setTrendDomain({
+      startMs: Number.isFinite(startMs) ? startMs : null,
+      endMs: Number.isFinite(endMs) ? endMs : null,
+    });
+    setTrendApplied(next);
+    await loadSeries(siteId, next);
+  };
+
+  const applyPresetHours = async (hours) => {
+    const end = new Date();
+    const start = new Date(end.getTime() - hours * 60 * 60 * 1000);
+    const startLocal = toDatetimeLocalInput(start);
+    const endLocal = toDatetimeLocalInput(end);
+    setTrendStart(startLocal);
+    setTrendEnd(endLocal);
+    const next = { start: startLocal, end: endLocal, seq: Date.now() };
     const startMs = new Date(next.start).getTime();
     const endMs = new Date(next.end).getTime();
     setTrendDomain({
@@ -366,6 +384,16 @@ export default function SiteDashboardPageV2() {
   const fuelOnline = !!values.fuel_online || !!values.fuel_sensor_online;
   const gensetAlarm = !!values.genset_alarm || !!values.genset_any_alarm;
   const powerSource = String(values.power_source || "-");
+  const sitePowerAvailable = !!values.site_power_available;
+  const batterySupplying = !!values.power_supply_battery;
+  const gridSupplying = !!values.power_supply_grid;
+  const gensetSupplying = !!values.power_supply_genset;
+  const activeAlarmCount = (events.active_alarms || []).filter((a) => a.active).length;
+
+  const gridCardState = gridOnline ? "ok" : "fault";
+  const fuelCardState = fuelOnline ? "ok" : "fault";
+  const gensetCardState = gensetOnline > 0 ? (gensetAlarm ? "warn" : "ok") : "fault";
+  const batteryCardState = batteryOnline > 0 ? (batteryLowSocCount > 0 ? "warn" : "ok") : "fault";
 
   const rsRows = [
     { name: "RS1", onlineCount: Number(values.rs1_online_count ?? 0), avgSoc: Number(values.rs1_avg_soc ?? 0) },
@@ -389,6 +417,33 @@ export default function SiteDashboardPageV2() {
         </div>
       </div>
 
+      <div className="noc-strip">
+        <div className="noc-tile">
+          <span>Site</span>
+          <b>{siteId || "-"}</b>
+        </div>
+        <div className="noc-tile">
+          <span>Power Source</span>
+          <b>{powerSource.toUpperCase()}</b>
+        </div>
+        <div className="noc-tile">
+          <span>Power State</span>
+          <b><StatusChip online={sitePowerAvailable} onlineText="AVAILABLE" offlineText="UNAVAILABLE" /></b>
+        </div>
+        <div className="noc-tile">
+          <span>Supply Path</span>
+          <b>{gridSupplying ? "GRID" : gensetSupplying ? "GENSET" : batterySupplying ? "BATTERY" : "NONE"}</b>
+        </div>
+        <div className="noc-tile">
+          <span>Active Alarms</span>
+          <b>{activeAlarmCount}</b>
+        </div>
+        <div className="noc-tile">
+          <span>Last Telemetry</span>
+          <b>{telemetryAgeText}</b>
+        </div>
+      </div>
+
       <div className="tab-row">
         <button type="button" className={`secondary ${tab === "overview" ? "tab-active" : ""}`} onClick={() => setTab("overview")}>Overview</button>
         <button type="button" className={`secondary ${tab === "trends" ? "tab-active" : ""}`} onClick={() => setTab("trends")}>Trends</button>
@@ -400,22 +455,22 @@ export default function SiteDashboardPageV2() {
         <>
           <div className="section-title">Site Status</div>
           <div className="grid">
-            <div className="card">
+            <div className="card card-state-neutral">
               <h3>Device</h3>
               <div className="value-line">{latest?.device_id || "-"}</div>
               <div className="meta-line">Firmware: {latest?.fw_version || "-"}</div>
             </div>
-            <div className="card">
+            <div className="card card-state-neutral">
               <h3>Transport</h3>
               <div className="value-line">{String(latest?.transport_status || "-").toUpperCase()}</div>
               <div className="meta-line">Source: MQTT/HTTP runtime</div>
             </div>
-            <div className="card">
+            <div className={`card ${heartbeatOnline ? "card-state-ok" : "card-state-warn"}`}>
               <h3>Network Heartbeat</h3>
               <div className="value-line"><StatusChip online={heartbeatOnline} /></div>
               <div className="meta-line">Telemetry link state</div>
             </div>
-            <div className="card">
+            <div className={`card ${telemetryFresh ? "card-state-ok" : "card-state-warn"}`}>
               <h3>Last Telemetry</h3>
               <div className="meta-line">{lastTelemetryAt}</div>
               <div className="value-line">{telemetryAgeText}</div>
@@ -427,7 +482,7 @@ export default function SiteDashboardPageV2() {
 
           <div className="section-title">Subsystems</div>
           <div className="subsystem-grid">
-            <div className="card">
+            <div className={`card card-state-${gridCardState}`}>
               <h3>Grid</h3>
               <div className="metric-list">
                 <MetricRow label="Status" value={<StatusChip online={gridOnline} />} />
@@ -439,7 +494,7 @@ export default function SiteDashboardPageV2() {
                 <MetricRow label="Energy" value={`${Number(values.grid_energy_kwh ?? 0).toFixed(3)} kWh`} />
               </div>
             </div>
-            <div className="card">
+            <div className={`card card-state-${fuelCardState}`}>
               <h3>Fuel</h3>
               <div className="metric-list">
                 <MetricRow label="Status" value={<StatusChip online={fuelOnline} />} />
@@ -448,7 +503,7 @@ export default function SiteDashboardPageV2() {
                 <MetricRow label="Raw" value={`${Number(values.fuel_raw ?? 0)}`} />
               </div>
             </div>
-            <div className="card">
+            <div className={`card card-state-${gensetCardState}`}>
               <h3>Generator</h3>
               <div className="metric-list">
                 <MetricRow label="Status" value={<StatusChip online={gensetOnline > 0} />} />
@@ -461,7 +516,7 @@ export default function SiteDashboardPageV2() {
                 <MetricRow label="Run Hours" value={`${Number(values.genset_run_hours ?? 0).toFixed(0)}`} />
               </div>
             </div>
-            <div className="card">
+            <div className={`card card-state-${batteryCardState}`}>
               <h3>Batteries</h3>
               <div className="metric-list">
                 <MetricRow label="Status" value={<StatusChip online={batteryOnline > 0} />} />
@@ -502,6 +557,10 @@ export default function SiteDashboardPageV2() {
               <label className="inline-label">To</label>
               <input type="datetime-local" value={trendEnd} onChange={(e) => setTrendEnd(e.target.value)} />
               <button type="button" onClick={applyTrendRange}>Apply</button>
+              <button type="button" className="secondary" onClick={() => applyPresetHours(1)}>1H</button>
+              <button type="button" className="secondary" onClick={() => applyPresetHours(6)}>6H</button>
+              <button type="button" className="secondary" onClick={() => applyPresetHours(24)}>24H</button>
+              <button type="button" className="secondary" onClick={() => applyPresetHours(168)}>7D</button>
             </div>
           </div>
 
