@@ -88,8 +88,10 @@ services:
     depends_on:
       emqx:
         condition: service_healthy
-      - postgres
-      - influxdb
+      postgres:
+        condition: service_started
+      influxdb:
+        condition: service_started
 
   frontend:
     build:
