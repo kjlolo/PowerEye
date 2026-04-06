@@ -154,6 +154,27 @@ def write_telemetry(site_id: str, device_id: str, data: dict) -> None:
         avg_soc = (rs_soc_sum[rs] / rs_soc_count[rs]) if rs_soc_count[rs] > 0 else 0.0
         point.field(f"rs{rs}_avg_soc", float(avg_soc))
 
+    # Per-bank compact fields for overview diagnostics (up to 16 banks).
+    for i in range(1, 17):
+        point.field(f"bank_{i}_online", False)
+        point.field(f"bank_{i}_voltage", 0.0)
+        point.field(f"bank_{i}_current", 0.0)
+        point.field(f"bank_{i}_soc", 0.0)
+        point.field(f"bank_{i}_soh", 0.0)
+        point.field(f"bank_{i}_alarm", False)
+    for b in battery_banks:
+        if not isinstance(b, dict):
+            continue
+        idx = int(b.get("index", 0) or 0)
+        if idx < 1 or idx > 16:
+            continue
+        point.field(f"bank_{idx}_online", bool(b.get("online", False)))
+        point.field(f"bank_{idx}_voltage", float(b.get("pack_voltage", 0.0) or 0.0))
+        point.field(f"bank_{idx}_current", float(b.get("pack_current", 0.0) or 0.0))
+        point.field(f"bank_{idx}_soc", float(b.get("soc", 0.0) or 0.0))
+        point.field(f"bank_{idx}_soh", float(b.get("soh", 0.0) or 0.0))
+        point.field(f"bank_{idx}_alarm", bool(b.get("alarm", False)))
+
     write_api.write(bucket=settings.influxdb_bucket, org=settings.influxdb_org, record=point)
 
 

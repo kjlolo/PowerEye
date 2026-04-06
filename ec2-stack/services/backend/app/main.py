@@ -432,6 +432,17 @@ def fleet_site_live(
         "queue_pending",
         "rssi",
     ]
+    for i in range(1, 17):
+        fields.extend(
+            [
+                f"bank_{i}_online",
+                f"bank_{i}_voltage",
+                f"bank_{i}_current",
+                f"bank_{i}_soc",
+                f"bank_{i}_soh",
+                f"bank_{i}_alarm",
+            ]
+        )
     field_filter = " or ".join([f'r["_field"] == "{f}"' for f in fields])
     query = f"""
 from(bucket: "{settings.influxdb_bucket}")

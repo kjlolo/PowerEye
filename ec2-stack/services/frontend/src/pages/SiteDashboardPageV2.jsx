@@ -413,6 +413,24 @@ export default function SiteDashboardPageV2() {
     { name: "RS4", onlineCount: Number(values.rs4_online_count ?? 0), avgSoc: Number(values.rs4_avg_soc ?? 0) },
   ];
 
+  const bankCount = Math.max(0, Math.min(16, batteryBanksConfigured || 0));
+  const bankRows = Array.from({ length: bankCount }, (_, i) => {
+    const idx = i + 1;
+    const online = !!values[`bank_${idx}_online`];
+    const alarm = !!values[`bank_${idx}_alarm`];
+    const soc = Number(values[`bank_${idx}_soc`] ?? 0);
+    const soh = Number(values[`bank_${idx}_soh`] ?? 0);
+    const voltage = Number(values[`bank_${idx}_voltage`] ?? 0);
+    const current = Number(values[`bank_${idx}_current`] ?? 0);
+    const rectifier = Math.min(4, Math.floor(i / 4) + 1);
+    const state = !online ? "fault" : alarm || soc <= 20 ? "warn" : "ok";
+    return { idx, online, alarm, soc, soh, voltage, current, rectifier, state };
+  });
+  const bankGroups = [1, 2, 3, 4].map((rs) => ({
+    rs,
+    items: bankRows.filter((b) => b.rectifier === rs),
+  })).filter((g) => g.items.length > 0);
+
   return (
     <div>
       <div className="topbar">
@@ -565,6 +583,34 @@ export default function SiteDashboardPageV2() {
               </table>
             </div>
           </div>
+
+          <div className="section-title">Battery Banks</div>
+          {bankGroups.length === 0 ? (
+            <div className="card"><div className="meta-line">No battery banks configured.</div></div>
+          ) : (
+            bankGroups.map((g) => (
+              <div className="card" key={`rs-${g.rs}`}>
+                <h3>{`RS${g.rs} Banks`}</h3>
+                <div className="bank-grid">
+                  {g.items.map((b) => (
+                    <div className={`bank-card card-state-${b.state}`} key={`bank-${b.idx}`}>
+                      <div className="bank-head">
+                        <span>{`Bank ${b.idx}`}</span>
+                        <StatusChip online={b.online} />
+                      </div>
+                      <div className="metric-list">
+                        <MetricRow label="Voltage" value={`${b.voltage.toFixed(2)} V`} />
+                        <MetricRow label="Current" value={`${b.current.toFixed(2)} A`} />
+                        <MetricRow label="SOC" value={`${b.soc.toFixed(1)} %`} />
+                        <MetricRow label="SOH" value={`${b.soh.toFixed(1)} %`} />
+                        <MetricRow label="Alarm" value={<WarnChip active={b.alarm} />} />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))
+          )}
         </>
       )}
 

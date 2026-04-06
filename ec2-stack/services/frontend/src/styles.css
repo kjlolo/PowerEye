@@ -99,6 +99,22 @@ button:hover { filter: brightness(1.05); }
   font-weight: 700;
 }
 .area-grid { display: grid; gap: 12px; grid-template-columns: repeat(3, minmax(260px, 1fr)); }
+.bank-grid { display: grid; gap: 10px; grid-template-columns: repeat(4, minmax(190px, 1fr)); }
+.bank-card {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 10px;
+}
+.bank-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+.bank-head span {
+  font-weight: 700;
+  letter-spacing: .3px;
+}
 .noc-strip {
   display: grid;
   grid-template-columns: repeat(6, minmax(160px, 1fr));
@@ -222,5 +238,6 @@ th { color: var(--accent); background: #0b1c3f; }
   .chart-grid { grid-template-columns: 1fr; }
   .noc-strip { grid-template-columns: 1fr 1fr; }
   .area-grid { grid-template-columns: 1fr; }
+  .bank-grid { grid-template-columns: 1fr; }
   .form-row { grid-template-columns: 1fr; }
 }
