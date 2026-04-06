@@ -43,6 +43,7 @@ from .services import (
 )
 
 app = FastAPI(title="PowerEye Control Plane", version="1.0.0")
+NETWORK_HEARTBEAT_STALE_SEC = 180
 
 BLOCKED_REMOTE_CONFIG_KEYS = {"identity", "cloud"}
 ALLOWED_REMOTE_CONFIG_KEYS = {"rs485", "fuel", "alarms", "power_availability"}
@@ -465,7 +466,7 @@ from(bucket: "{settings.influxdb_bucket}")
         "site_id": site_id,
         "last_telemetry_at": last_ts.isoformat() if last_ts else None,
         "last_telemetry_age_sec": age_sec,
-        "network_heartbeat_online": bool(values.get("network_online", False)),
+        "network_heartbeat_online": bool(values.get("network_online", False)) and (age_sec is not None and age_sec <= NETWORK_HEARTBEAT_STALE_SEC),
         "values": values,
         "viewer": user.email,
     }
