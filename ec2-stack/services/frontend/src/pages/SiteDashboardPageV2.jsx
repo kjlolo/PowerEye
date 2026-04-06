@@ -114,6 +114,20 @@ function localToIso(v) {
   return new Date(v).toISOString();
 }
 
+function formatBrowserDateTime(value) {
+  if (!value) return "-";
+  const dt = new Date(value);
+  if (Number.isNaN(dt.getTime())) return "-";
+  return dt.toLocaleString();
+}
+
+function formatAxisDateTime(value) {
+  const dt = new Date(value);
+  if (Number.isNaN(dt.getTime())) return "";
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${pad(dt.getMonth() + 1)}/${pad(dt.getDate())} ${pad(dt.getHours())}:${pad(dt.getMinutes())}`;
+}
+
 function TrendCard({ title, data, fields, onToggleField }) {
   return (
     <div className="card">
@@ -129,9 +143,9 @@ function TrendCard({ title, data, fields, onToggleField }) {
       <div className="chart-wrap">
         <ResponsiveContainer width="100%" height="100%">
           <LineChart data={data}>
-            <XAxis dataKey="time" hide />
+            <XAxis dataKey="ts" type="number" domain={["dataMin", "dataMax"]} tickFormatter={formatAxisDateTime} />
             <YAxis />
-            <Tooltip />
+            <Tooltip labelFormatter={(v) => formatBrowserDateTime(v)} />
             <Legend />
             {fields
               .filter((f) => f.enabled)
@@ -161,6 +175,13 @@ export default function SiteDashboardPageV2() {
   const now = new Date();
   const [trendStart, setTrendStart] = useState(toDatetimeLocalInput(new Date(now.getTime() - 24 * 60 * 60 * 1000)));
   const [trendEnd, setTrendEnd] = useState(toDatetimeLocalInput(now));
+  const [trendInfo, setTrendInfo] = useState({
+    requestedStart: "",
+    requestedEnd: "",
+    returnedStart: "",
+    returnedEnd: "",
+    points: 0,
+  });
   const [trendFields, setTrendFields] = useState({
     grid: Object.fromEntries(TREND_GROUPS.grid.map((k) => [k, true])),
     fuel: Object.fromEntries(TREND_GROUPS.fuel.map((k) => [k, true])),
@@ -196,12 +217,22 @@ export default function SiteDashboardPageV2() {
     const rows = tsRes.data.items || [];
     const byTime = new Map();
     rows.forEach((r) => {
-      const key = r.time;
-      const row = byTime.get(key) || { time: key };
+      const ts = new Date(r.time).getTime();
+      if (!Number.isFinite(ts)) return;
+      const key = String(ts);
+      const row = byTime.get(key) || { ts };
       row[r.field] = Number(r.value);
       byTime.set(key, row);
     });
-    setSeries(Array.from(byTime.values()).sort((a, b) => (a.time > b.time ? 1 : -1)));
+    const sorted = Array.from(byTime.values()).sort((a, b) => a.ts - b.ts);
+    setSeries(sorted);
+    setTrendInfo({
+      requestedStart: trendStart,
+      requestedEnd: trendEnd,
+      returnedStart: sorted.length ? new Date(sorted[0].ts).toISOString() : "",
+      returnedEnd: sorted.length ? new Date(sorted[sorted.length - 1].ts).toISOString() : "",
+      points: sorted.length,
+    });
   };
 
   const loadEvents = async (selected) => {
@@ -436,6 +467,8 @@ export default function SiteDashboardPageV2() {
               <input type="datetime-local" value={trendEnd} onChange={(e) => setTrendEnd(e.target.value)} />
               <button type="button" onClick={() => loadSeries(siteId)}>Apply</button>
             </div>
+            <div className="meta-line">Applied Range (Browser Local): {trendInfo.requestedStart || "-"} to {trendInfo.requestedEnd || "-"}</div>
+            <div className="meta-line">Returned Coverage: {formatBrowserDateTime(trendInfo.returnedStart)} to {formatBrowserDateTime(trendInfo.returnedEnd)} ({trendInfo.points} points)</div>
           </div>
 
           <div className="chart-grid">
@@ -534,7 +567,7 @@ export default function SiteDashboardPageV2() {
                 ) : (
                   (events.history || []).map((evt, idx) => (
                     <tr key={`${evt.alarm_key}-${evt.time}-${idx}`}>
-                      <td>{new Date(evt.time).toLocaleString()}</td>
+                      <td>{formatBrowserDateTime(evt.time)}</td>
                       <td>{evt.alarm_label}</td>
                       <td>{evt.state.toUpperCase()}</td>
                     </tr>
