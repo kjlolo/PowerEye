@@ -137,7 +137,7 @@ export default function OtaPage() {
             }
           }}
         />
-        <button type="submit" disabled={busy}>{busy ? "Working..." : "Create Release + Upload Binary"}</button>
+        <button type="submit" disabled={busy}>{busy ? "Uploading..." : "Upload"}</button>
       </form>
 
       <form className="card form-grid" onSubmit={createJob}>
