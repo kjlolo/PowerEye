@@ -8,6 +8,9 @@ bool PreferencesStore::load(DeviceConfig& config) {
   config.identity.deviceId = _prefs.getString("device_id", config.identity.deviceId);
   config.identity.siteId = _prefs.getString("site_id", config.identity.siteId);
   config.identity.siteName = _prefs.getString("site_name", config.identity.siteName);
+  config.identity.group = _prefs.getString("group", config.identity.group);
+  config.identity.province = _prefs.getString("province", config.identity.province);
+  config.identity.city = _prefs.getString("city", config.identity.city);
 
   config.cloud.baseUrl = _prefs.getString("base_url", config.cloud.baseUrl);
   config.cloud.telemetryPath = _prefs.getString("tele_path", config.cloud.telemetryPath);
@@ -96,6 +99,9 @@ bool PreferencesStore::save(const DeviceConfig& config) {
   _prefs.putString("device_id", config.identity.deviceId);
   _prefs.putString("site_id", config.identity.siteId);
   _prefs.putString("site_name", config.identity.siteName);
+  _prefs.putString("group", config.identity.group);
+  _prefs.putString("province", config.identity.province);
+  _prefs.putString("city", config.identity.city);
 
   _prefs.putString("base_url", config.cloud.baseUrl);
   _prefs.putString("tele_path", config.cloud.telemetryPath);

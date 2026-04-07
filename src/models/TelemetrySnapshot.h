@@ -9,8 +9,13 @@
 
 struct TelemetrySnapshot {
   String deviceId;
+  String deviceMac;
   String siteId;
   String siteName;
+  String group;
+  String province;
+  String city;
+  uint32_t sequenceId = 0;
   unsigned long uptimeMs = 0;
   size_t queuePending = 0;
   int rssi = 0;

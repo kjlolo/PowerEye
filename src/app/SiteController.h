@@ -62,6 +62,8 @@ private:
   String _cachedPhoneNumber = "";
   String _lastTransportStatus = "init";
   String _lastPublishError = "";
+  String _deviceMac = "";
+  uint32_t _sequenceCounter = 0;
   unsigned long _lastMqttControlPoll = 0;
   unsigned long _lastSyncNowMs = 0;
   String _lastHandledSyncRequestId = "";

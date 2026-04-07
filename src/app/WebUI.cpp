@@ -389,6 +389,18 @@ void WebUI::begin() {
     if (request->hasParam("site_id", true)) {
       _config.identity.siteId = request->getParam("site_id", true)->value();
     }
+    if (request->hasParam("group", true)) {
+      _config.identity.group = request->getParam("group", true)->value();
+      _config.identity.group.trim();
+    }
+    if (request->hasParam("province", true)) {
+      _config.identity.province = request->getParam("province", true)->value();
+      _config.identity.province.trim();
+    }
+    if (request->hasParam("city", true)) {
+      _config.identity.city = request->getParam("city", true)->value();
+      _config.identity.city.trim();
+    }
     _config.ui.apSsid = buildApSsidFromSiteId(_config.identity.siteId);
     if (request->hasParam("device_id", true)) {
       _config.identity.deviceId = request->getParam("device_id", true)->value();
@@ -1244,6 +1256,9 @@ String WebUI::settingsHtml() const {
   html += "<div class='field'><label>Device ID</label><input name='device_id' value='" + htmlEscape(_config.identity.deviceId) + "'></div>";
   html += "<div class='field'><label>Site ID</label><input name='site_id' value='" + htmlEscape(_config.identity.siteId) + "'></div>";
   html += "<div class='field'><label>Site Name</label><input name='site_name' value='" + htmlEscape(_config.identity.siteName) + "'></div>";
+  html += "<input type='hidden' name='group' value='" + htmlEscape(_config.identity.group) + "'>";
+  html += "<input type='hidden' name='province' value='" + htmlEscape(_config.identity.province) + "'>";
+  html += "<input type='hidden' name='city' value='" + htmlEscape(_config.identity.city) + "'>";
   html += "</div></div>";
   html += "</div>";
 
@@ -1516,6 +1531,9 @@ function importDeviceSecrets() {
 
   const mappings = [
     ['DEVICE_SITE_ID', 'site_id'],
+    ['DEVICE_GROUP', 'group'],
+    ['DEVICE_PROVINCE', 'province'],
+    ['DEVICE_CITY', 'city'],
     ['MQTT_CLIENT_ID', 'mqtt_client_id'],
     ['MQTT_USERNAME', 'mqtt_user'],
     ['MQTT_PASSWORD', 'mqtt_pass'],

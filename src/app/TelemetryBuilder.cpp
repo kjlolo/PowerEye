@@ -374,11 +374,11 @@ String buildMcbeamPayload(const TelemetrySnapshot& snapshot, bool syncOnly, cons
 
   doc["site_id"] = snapshot.siteId;
   doc["fw"] = snapshot.fwVersion;
-  doc["device_mac"] = snapshot.deviceId;
-  doc["group"] = "";
-  doc["province"] = "";
-  doc["city"] = "";
-  doc["sequence_id"] = snapshot.uptimeMs;
+  doc["device_mac"] = snapshot.deviceMac;
+  doc["group"] = snapshot.group;
+  doc["province"] = snapshot.province;
+  doc["city"] = snapshot.city;
+  doc["sequence_id"] = snapshot.sequenceId;
 
   doc["temperature"] = 0.0f;
   doc["humidity"] = 0.0f;
@@ -424,31 +424,44 @@ String buildMcbeamPayload(const TelemetrySnapshot& snapshot, bool syncOnly, cons
   doc["genset_breaker"] = gensetOnLoad ? "CLOSED" : "OPEN";
 
   JsonArray coils = doc["genset_coils"].to<JsonArray>();
-  (void)coils;
+  if (primaryGenset != nullptr) {
+    const GensetData& g = *primaryGenset;
+    coils.add(g.generatorLoad ? 1 : 0);
+    coils.add(g.mainsLoad ? 1 : 0);
+    coils.add(g.autoMode ? 1 : 0);
+    coils.add(g.manualMode ? 1 : 0);
+    coils.add(g.stopMode ? 1 : 0);
+    coils.add(g.commonAlarm ? 1 : 0);
+    coils.add(g.commonWarn ? 1 : 0);
+    coils.add(g.commonShutdown ? 1 : 0);
+    coils.add(g.lowFuelWarn ? 1 : 0);
+    coils.add(g.chargeFailWarn ? 1 : 0);
+    coils.add(g.batteryUndervoltageWarn ? 1 : 0);
+    coils.add(g.batteryOvervoltageWarn ? 1 : 0);
+    coils.add(g.overSpeedShutdown ? 1 : 0);
+    coils.add(g.lowOilPressureShutdown ? 1 : 0);
+    coils.add(g.highEngineTemperatureShutdown ? 1 : 0);
+    coils.add(g.failedToStartShutdown ? 1 : 0);
+  }
 
   doc["fuel"] = snapshot.fuel.percent;
-  doc["fuel_voltage"] = snapshot.fuel.raw;
+  doc["fuel_voltage"] = (snapshot.fuel.raw / 4095.0f) * 3.3f;
   doc["fuel_tank_capacity"] = fuelTankCapacity;
   doc["fuel_liters"] = snapshot.fuel.liters;
 
   JsonArray rectifiers = doc["rectifiers"].to<JsonArray>();
-  for (uint8_t rectifier = 0; rectifier < batteryCount; rectifier += Rs485Config::BANKS_PER_RECTIFIER) {
-    JsonObject rect = rectifiers.add<JsonObject>();
-    rect["id"] = (rectifier / Rs485Config::BANKS_PER_RECTIFIER) + 1;
-    JsonArray batteries = rect["batteries"].to<JsonArray>();
-
-    for (uint8_t offset = 0; offset < Rs485Config::BANKS_PER_RECTIFIER; ++offset) {
-      const uint8_t idx = rectifier + offset;
-      if (idx >= batteryCount) break;
-      const BatteryData& b = snapshot.batteryBanks[idx];
-      if (!b.online) continue;
-      JsonObject batt = batteries.add<JsonObject>();
-      batt["id"] = snapshot.batteryBankSlaveIds[idx];
-      batt["voltage"] = b.packVoltage;
-      batt["current"] = b.packCurrent;
-      batt["soc"] = b.soc;
-      batt["soh"] = b.soh;
-    }
+  JsonObject rect = rectifiers.add<JsonObject>();
+  rect["id"] = 1;
+  JsonArray batteries = rect["batteries"].to<JsonArray>();
+  for (uint8_t idx = 0; idx < batteryCount; ++idx) {
+    const BatteryData& b = snapshot.batteryBanks[idx];
+    if (!b.online) continue;
+    JsonObject batt = batteries.add<JsonObject>();
+    batt["id"] = snapshot.batteryBankSlaveIds[idx];
+    batt["voltage"] = b.packVoltage;
+    batt["current"] = b.packCurrent;
+    batt["soc"] = b.soc;
+    batt["soh"] = b.soh;
   }
 
   if (syncOnly && syncRequestId.length() > 0) {

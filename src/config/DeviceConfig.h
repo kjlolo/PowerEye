@@ -50,6 +50,9 @@ struct DeviceIdentityConfig {
   String deviceId = "PE-001";
   String siteId = "SITE-001";
   String siteName = "UNASSIGNED";
+  String group = "";
+  String province = "";
+  String city = "";
 };
 
 struct CloudConfig {
