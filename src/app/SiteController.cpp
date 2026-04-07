@@ -154,6 +154,15 @@ void SiteController::begin() {
   _snapshot.deviceId = _config.identity.deviceId;
   _snapshot.siteId = _config.identity.siteId;
   _snapshot.siteName = _config.identity.siteName;
+  _snapshot.group = _config.identity.group;
+  _snapshot.province = _config.identity.province;
+  _snapshot.city = _config.identity.city;
+  _deviceMac = _config.identity.deviceId;
+  _deviceMac.replace(" ", "");
+  _deviceMac.replace("-", "");
+  _deviceMac.replace("_", "");
+  _deviceMac.toLowerCase();
+  _snapshot.deviceMac = _deviceMac;
 }
 
 void SiteController::update() {
@@ -319,8 +328,13 @@ void SiteController::handlePolling() {
 
 void SiteController::updateSnapshot() {
   _snapshot.deviceId = _config.identity.deviceId;
+  _snapshot.deviceMac = _deviceMac;
   _snapshot.siteId = _config.identity.siteId;
   _snapshot.siteName = _config.identity.siteName;
+  _snapshot.group = _config.identity.group;
+  _snapshot.province = _config.identity.province;
+  _snapshot.city = _config.identity.city;
+  _snapshot.sequenceId = _sequenceCounter;
   _snapshot.uptimeMs = millis();
   _snapshot.queuePending = _queue.size();
   const unsigned long now = millis();
@@ -409,6 +423,8 @@ void SiteController::handlePublishing() {
 
   if (now - _lastReport >= _config.cloud.reportIntervalMs) {
     _lastReport = now;
+    _sequenceCounter++;
+    _snapshot.sequenceId = _sequenceCounter;
     const String payload = _telemetryBuilder.buildJson(
       _snapshot,
       _config.cloud.completePayload,
@@ -509,6 +525,8 @@ void SiteController::handleMqttCommand(const String& topic, const String& payloa
       return;
     }
 
+    _sequenceCounter++;
+    _snapshot.sequenceId = _sequenceCounter;
     const String syncPayload = _telemetryBuilder.buildJson(
       _snapshot,
       _config.cloud.completePayload,
