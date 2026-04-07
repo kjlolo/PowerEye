@@ -375,6 +375,8 @@ String buildMcbeamPayload(const TelemetrySnapshot& snapshot, bool syncOnly, cons
   doc["site_id"] = snapshot.siteId;
   doc["fw"] = snapshot.fwVersion;
   doc["device_mac"] = snapshot.deviceMac;
+  doc["rssi"] = snapshot.rssi;
+  doc["phone_number"] = snapshot.phoneNumber;
   doc["group"] = snapshot.group;
   doc["province"] = snapshot.province;
   doc["city"] = snapshot.city;
