@@ -79,22 +79,7 @@ bool MqttClient::publishStatus(const CloudConfig& cloud, const String& statusPay
   if (cloud.mqttStatusTopic.isEmpty()) {
     return false;
   }
-  const String clientId = resolveClientId(cloud);
-  const bool ok = _modem.mqttPublish(
-    cloud.mqttHost,
-    cloud.mqttPort,
-    cloud.mqttTls,
-    clientId,
-    cloud.mqttUsername,
-    cloud.mqttPassword,
-    cloud.mqttStatusTopic,
-    statusPayload,
-    cloud.mqttMtlsEnabled,
-    cloud.mqttTlsHostname,
-    effectiveCaPem(cloud),
-    cloud.mqttClientCertPem,
-    cloud.mqttClientKeyPem
-  );
+  const bool ok = publish(cloud, statusPayload);
   if (ok) {
     _statusPublished = true;
   }
