@@ -268,7 +268,7 @@ String buildPowerEyePayload(const TelemetrySnapshot& snapshot, bool completePayl
   return out;
 }
 
-String buildMcbeamPayload(const TelemetrySnapshot& snapshot) {
+String buildMcbeamPayload(const TelemetrySnapshot& snapshot, bool syncOnly, const String& syncRequestId) {
   JsonDocument doc;
   const uint8_t gensetCount = effectiveGensetCount(snapshot);
   const uint8_t batteryCount = effectiveBatteryCount(snapshot);
@@ -451,15 +451,24 @@ String buildMcbeamPayload(const TelemetrySnapshot& snapshot) {
     }
   }
 
+  if (syncOnly && syncRequestId.length() > 0) {
+    doc["sync_request_id"] = syncRequestId;
+    doc["sync_only"] = true;
+  }
+
   String out;
   serializeJson(doc, out);
   return out;
 }
 }
 
-String TelemetryBuilder::buildJson(const TelemetrySnapshot& snapshot, bool completePayload, bool mcbeamCompatPayload) const {
+String TelemetryBuilder::buildJson(const TelemetrySnapshot& snapshot,
+                                   bool completePayload,
+                                   bool mcbeamCompatPayload,
+                                   bool syncOnly,
+                                   const String& syncRequestId) const {
   if (mcbeamCompatPayload) {
-    return buildMcbeamPayload(snapshot);
+    return buildMcbeamPayload(snapshot, syncOnly, syncRequestId);
   }
   return buildPowerEyePayload(snapshot, completePayload);
 }

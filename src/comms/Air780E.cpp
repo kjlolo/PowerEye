@@ -50,6 +50,94 @@ String extractLikelyPhoneNumber(const String& response) {
   number.trim();
   return number;
 }
+
+String compactAtSnippet(const String& in, size_t maxLen = 80) {
+  String out = in;
+  out.replace("\r", " ");
+  out.replace("\n", " ");
+  out.trim();
+  while (out.indexOf("  ") >= 0) out.replace("  ", " ");
+  if (out.length() > maxLen) {
+    out = out.substring(0, maxLen);
+  }
+  return out;
+}
+
+String quoteAt(const String& in) {
+  String out;
+  out.reserve(in.length() + 8);
+  for (size_t i = 0; i < in.length(); ++i) {
+    const char c = in.charAt(i);
+    if (c == '\\') out += "\\\\";
+    else if (c == '"') out += "\\\"";
+    else out += c;
+  }
+  return out;
+}
+
+String escapeMpubPayload(const String& in) {
+  // Air780E MPUB payload is passed inside quotes. Escape control chars and quotes.
+  String out;
+  out.reserve(in.length() + 16);
+  for (size_t i = 0; i < in.length(); ++i) {
+    const char c = in.charAt(i);
+    if (c == '"') out += "\\22";
+    else if (c == '\\') out += "\\5C";
+    else if (c == '\r') out += "\\0D";
+    else if (c == '\n') out += "\\0A";
+    else out += c;
+  }
+  return out;
+}
+
+bool extractQuotedField(const String& input, int startAt, String& value, int& nextAt) {
+  const int open = input.indexOf('"', startAt);
+  if (open < 0) return false;
+  const int close = input.indexOf('"', open + 1);
+  if (close < 0) return false;
+  value = input.substring(open + 1, close);
+  nextAt = close + 1;
+  return true;
+}
+
+bool parseMqttUrcLine(const String& rawLine, String& topic, String& payload) {
+  String line = rawLine;
+  line.trim();
+  if (line.isEmpty()) return false;
+
+  String upper = line;
+  upper.toUpperCase();
+  if (upper.indexOf("MSUB") < 0 && upper.indexOf("MQTT") < 0 && upper.indexOf("RECV") < 0) {
+    return false;
+  }
+
+  int pos = 0;
+  String q1;
+  String q2;
+  int next = 0;
+  if (extractQuotedField(line, pos, q1, next)) {
+    if (extractQuotedField(line, next, q2, next)) {
+      topic = q1;
+      payload = q2;
+      payload.trim();
+      return payload.length() > 0;
+    }
+    if (q1.indexOf('{') >= 0) {
+      payload = q1;
+      payload.trim();
+      return payload.length() > 0;
+    }
+  }
+
+  const int jsonStart = line.indexOf('{');
+  const int jsonEnd = line.lastIndexOf('}');
+  if (jsonStart >= 0 && jsonEnd > jsonStart) {
+    payload = line.substring(jsonStart, jsonEnd + 1);
+    payload.trim();
+    return payload.length() > 0;
+  }
+  return false;
+}
 }
 
 Air780E::Air780E(HardwareSerial& serial) : _serial(serial) {}
@@ -475,43 +563,83 @@ bool Air780E::mqttPublish(const String& host,
   }
 
   String out;
-  if (!mqttSendData("AT+CMQTTTOPIC=0," + String(topic.length()), topic, "OK", 8000)) {
-    _lastError = "mqtt_topic_failed";
-    return false;
-  }
-  if (!mqttSendData("AT+CMQTTPAYLOAD=0," + String(payload.length()), payload, "OK", 12000)) {
-    _lastError = "mqtt_payload_failed";
-    return false;
-  }
-  if (!sendCommand("AT+CMQTTPUB=0,1,60", "OK", 12000, &out)) {
-    _lastError = "mqtt_pub_failed";
+  const String safePayload = escapeMpubPayload(payload);
+  const String cmd = "AT+MPUB=\"" + quoteAt(topic) + "\",0,0,\"" + safePayload + "\"";
+  if (!sendCommand(cmd, "OK", 12000, &out)) {
+    _lastError = "mqtt_pub_failed:" + compactAtSnippet(out);
     _mqttReady = false;
     return false;
-  }
-  if (out.indexOf("+CMQTTPUB: 0,0") < 0) {
-    String evt;
-    if (!sendCommand("", "+CMQTTPUB:", 6000, &evt)) {
-      _lastError = "mqtt_pub_ack_timeout";
-      _mqttReady = false;
-      return false;
-    }
-    if (evt.indexOf("+CMQTTPUB: 0,0") < 0) {
-      _lastError = "mqtt_pub_ack_failed";
-      _mqttReady = false;
-      return false;
-    }
   }
   return true;
 }
 
+bool Air780E::mqttEnsureConnected(const String& host,
+                                  uint16_t port,
+                                  bool useTls,
+                                  const String& clientId,
+                                  const String& username,
+                                  const String& password) {
+  return ensureMqttConnected(host, port, useTls, clientId, username, password);
+}
+
+bool Air780E::mqttSubscribe(const String& topic, uint8_t qos) {
+  if (!_mqttReady) {
+    _lastError = "mqtt_not_connected";
+    return false;
+  }
+  if (topic.isEmpty()) {
+    _lastError = "mqtt_sub_topic_empty";
+    return false;
+  }
+  if (qos > 1) qos = 1;
+
+  String out;
+  const String cmd = "AT+MSUB=\"" + quoteAt(topic) + "\"," + String(static_cast<int>(qos));
+  if (!sendCommand(cmd, "OK", 12000, &out)) {
+    _lastError = "mqtt_sub_failed:" + compactAtSnippet(out);
+    return false;
+  }
+  _mqttSubscribedTopic = topic;
+  return true;
+}
+
+bool Air780E::mqttPollMessage(String& topic, String& payload) {
+  topic = "";
+  payload = "";
+
+  while (_serial.available() > 0) {
+    const char c = static_cast<char>(_serial.read());
+    _mqttRxBuffer += c;
+    if (_mqttRxBuffer.length() > 4096) {
+      _mqttRxBuffer.remove(0, _mqttRxBuffer.length() - 2048);
+    }
+  }
+
+  int newline = _mqttRxBuffer.indexOf('\n');
+  while (newline >= 0) {
+    String line = _mqttRxBuffer.substring(0, newline + 1);
+    _mqttRxBuffer.remove(0, newline + 1);
+    String parsedTopic = "";
+    String parsedPayload = "";
+    if (parseMqttUrcLine(line, parsedTopic, parsedPayload)) {
+      topic = parsedTopic.length() > 0 ? parsedTopic : _mqttSubscribedTopic;
+      payload = parsedPayload;
+      return true;
+    }
+    newline = _mqttRxBuffer.indexOf('\n');
+  }
+  return false;
+}
+
 void Air780E::mqttDisconnect() {
   const String prevError = _lastError;
-  sendCommand("AT+CMQTTDISC=0,60", "OK", 3000);
-  sendCommand("AT+CMQTTREL=0", "OK", 3000);
-  sendCommand("AT+CMQTTSTOP", "OK", 4000);
+  sendCommand("AT+MDISCONNECT", "OK", 4000);
+  sendCommand("AT+MIPCLOSE", "OK", 5000);
   _lastError = prevError;
   _mqttReady = false;
   _mqttEndpoint = "";
+  _mqttSubscribedTopic = "";
+  _mqttRxBuffer = "";
 }
 
 String Air780E::lastError() const {
@@ -542,33 +670,71 @@ bool Air780E::ensureMqttConnected(const String& host,
   }
 
   String out;
-  if (!sendCommandAny("AT+CMQTTSTART", "OK", "ERROR", 6000, &out)) {
-    _lastError = "mqtt_start_failed";
+  // Always clear stale socket/session state before opening a new MQTT transport.
+  sendCommand("AT+MDISCONNECT", "OK", 4000, &out);
+  sendCommand("AT+MIPCLOSE", "OK", 5000, &out);
+
+  String user = username;
+  String pass = password;
+  if (user.isEmpty()) user = cid;
+
+  // Configure MQTT identity/auth first.
+  const String mcfg = "AT+MCONFIG=\"" + quoteAt(cid) + "\",\"" + quoteAt(user) + "\",\"" + quoteAt(pass) + "\"";
+  if (!sendCommand(mcfg, "OK", 6000, &out)) {
+    _lastError = "mqtt_config_failed:" + compactAtSnippet(out);
     return false;
   }
 
-  if (!sendCommandAny("AT+CMQTTACCQ=0,\"" + cid + "\"", "OK", "ERROR", 6000, &out)) {
-    _lastError = "mqtt_accq_failed";
-    return false;
+  const String hostQ = quoteAt(host);
+  const String portQ = String(port);
+  const String startCmd = useTls
+    ? ("AT+SSLMIPSTART=\"" + hostQ + "\",\"" + portQ + "\"")
+    : ("AT+MIPSTART=\"" + hostQ + "\",\"" + portQ + "\"");
+  bool socketReady = false;
+
+  if (!sendCommand(startCmd, "OK", 12000, &out)) {
+    const String upper = normalizedAt(out);
+    const bool alreadyConnected = (upper.indexOf("ALREADY") >= 0 && upper.indexOf("CONNECT") >= 0);
+    if (!alreadyConnected) {
+      // Try one recovery cycle in case socket state is stale.
+      sendCommand("AT+MIPCLOSE", "OK", 5000);
+      if (!sendCommand(startCmd, "OK", 12000, &out)) {
+        const String retryUpper = normalizedAt(out);
+        const bool retryAlreadyConnected = (retryUpper.indexOf("ALREADY") >= 0 && retryUpper.indexOf("CONNECT") >= 0);
+        if (!retryAlreadyConnected) {
+          _lastError = "mqtt_start_failed:" + compactAtSnippet(out);
+          return false;
+        }
+      }
+      socketReady = true;
+    } else {
+      socketReady = true;
+    }
+  } else {
+    socketReady = true;
+  }
+  // Wait for TCP connect URC only when modem did not already report connected.
+  if (socketReady && out.indexOf("CONNECT OK") < 0 && normalizedAt(out).indexOf("ALREADYCONNECT") < 0) {
+    String evt;
+    if (!sendCommand("", "CONNECT OK", 18000, &evt)) {
+      _lastError = "mqtt_start_failed:" + compactAtSnippet(evt);
+      return false;
+    }
   }
 
-  String connectCmd = "AT+CMQTTCONNECT=0,\"" + endpoint + "\",60,1";
-  if (!username.isEmpty()) {
-    connectCmd += ",\"" + username + "\",\"" + password + "\"";
-  }
-  if (!sendCommand(connectCmd, "OK", 15000, &out)) {
-    _lastError = "mqtt_connect_failed";
+  if (!sendCommand("AT+MCONNECT=1,60", "OK", 6000, &out)) {
+    _lastError = "mqtt_connect_failed:" + compactAtSnippet(out);
     _mqttReady = false;
     return false;
   }
-  if (out.indexOf("+CMQTTCONNECT: 0,0") < 0) {
+  if (out.indexOf("CONNACK OK") < 0) {
     String evt;
-    if (!sendCommand("", "+CMQTTCONNECT:", 15000, &evt)) {
+    if (!sendCommand("", "CONNACK OK", 15000, &evt)) {
       _lastError = "mqtt_connect_ack_timeout";
       _mqttReady = false;
       return false;
     }
-    if (evt.indexOf("+CMQTTCONNECT: 0,0") < 0) {
+    if (evt.indexOf("CONNACK OK") < 0) {
       _lastError = "mqtt_connect_ack_failed";
       _mqttReady = false;
       return false;
@@ -577,6 +743,7 @@ bool Air780E::ensureMqttConnected(const String& host,
 
   _mqttReady = true;
   _mqttEndpoint = endpoint;
+  _mqttRxBuffer = "";
   return true;
 }
 

@@ -27,6 +27,8 @@ private:
   void updateSnapshot();
   void handlePolling();
   void handlePublishing();
+  void handleMqttControl();
+  void handleMqttCommand(const String& topic, const String& payload);
 
   DeviceConfig _config;
   PreferencesStore _prefs;
@@ -60,4 +62,9 @@ private:
   String _cachedPhoneNumber = "";
   String _lastTransportStatus = "init";
   String _lastPublishError = "";
+  unsigned long _lastMqttControlPoll = 0;
+  unsigned long _lastSyncNowMs = 0;
+  String _lastHandledSyncRequestId = "";
+  bool _pendingOtaCheck = false;
+  bool _mqttOnlinePublished = false;
 };

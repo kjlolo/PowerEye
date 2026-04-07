@@ -18,6 +18,14 @@ public:
                    const String& password,
                    const String& topic,
                    const String& payload);
+  bool mqttEnsureConnected(const String& host,
+                           uint16_t port,
+                           bool useTls,
+                           const String& clientId,
+                           const String& username,
+                           const String& password);
+  bool mqttSubscribe(const String& topic, uint8_t qos = 1);
+  bool mqttPollMessage(String& topic, String& payload);
   void mqttDisconnect();
   String lastError() const;
 
@@ -44,4 +52,6 @@ private:
   String _lastError;
   bool _mqttReady = false;
   String _mqttEndpoint;
+  String _mqttSubscribedTopic;
+  String _mqttRxBuffer;
 };

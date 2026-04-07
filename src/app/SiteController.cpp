@@ -3,6 +3,7 @@
 #include "Pins.h"
 #include "BuildInfo.h"
 #include <Arduino.h>
+#include <ArduinoJson.h>
 
 namespace {
   HardwareSerial& MODEM_SERIAL = Serial2;
@@ -214,6 +215,8 @@ void SiteController::update() {
     result += "\"mqtt_port\":" + String(_config.cloud.mqttPort) + ",";
     result += "\"mqtt_tls\":" + String(_config.cloud.mqttTls ? "true" : "false") + ",";
     result += "\"mqtt_topic\":\"" + jsonEscape(_config.cloud.mqttTelemetryTopic) + "\",";
+    result += "\"mqtt_cmd_topic\":\"" + jsonEscape(_config.cloud.mqttCmdTopic) + "\",";
+    result += "\"mqtt_status_topic\":\"" + jsonEscape(_config.cloud.mqttStatusTopic) + "\",";
     result += "\"mqtt_client_id\":\"" + jsonEscape(_config.cloud.mqttClientId) + "\",";
     result += "\"mqtt_username\":\"" + jsonEscape(_config.cloud.mqttUsername) + "\"";
     result += "}";
@@ -221,6 +224,7 @@ void SiteController::update() {
   }
   handlePolling();
   updateSnapshot();
+  handleMqttControl();
   handlePublishing();
 }
 
@@ -428,6 +432,94 @@ void SiteController::handlePublishing() {
                     _modem.lastError().c_str());
       _lastTransportStatus = _publishManager.lastTransport();
       _lastPublishError = _modem.lastError();
+    }
+  }
+}
+
+void SiteController::handleMqttControl() {
+  if (!_config.cloud.mqttEnabled) {
+    return;
+  }
+  if (_config.cloud.mqttHost.isEmpty() || _config.cloud.mqttTelemetryTopic.isEmpty()) {
+    return;
+  }
+  if (_config.cloud.mqttClientId.isEmpty()) {
+    _config.cloud.mqttClientId = _config.identity.deviceId;
+  }
+
+  const unsigned long now = millis();
+  if (now - _lastMqttControlPoll < 500) {
+    return;
+  }
+  _lastMqttControlPoll = now;
+
+  if (!_mqtt.ensureControlChannel(_config.cloud)) {
+    _mqttOnlinePublished = false;
+    return;
+  }
+
+  if (!_mqttOnlinePublished && !_config.cloud.mqttStatusTopic.isEmpty()) {
+    if (_mqtt.publishStatus(_config.cloud, "online")) {
+      _mqttOnlinePublished = true;
+    }
+  }
+
+  String topic;
+  String payload;
+  while (_mqtt.pollCommand(topic, payload)) {
+    handleMqttCommand(topic, payload);
+  }
+
+  if (_pendingOtaCheck) {
+    _pendingOtaCheck = false;
+    Serial.println("[MQTT] ota_check requested. Remote OTA pull is not wired yet.");
+  }
+}
+
+void SiteController::handleMqttCommand(const String& topic, const String& payload) {
+  JsonDocument doc;
+  if (deserializeJson(doc, payload) != DeserializationError::Ok) {
+    return;
+  }
+  const String cmd = doc["cmd"] | "";
+  if (cmd.isEmpty()) {
+    return;
+  }
+
+  if (cmd == "ota_check") {
+    Serial.printf("[MQTT] CMD ota_check topic=%s\n", topic.c_str());
+    _pendingOtaCheck = true;
+    return;
+  }
+
+  if (cmd == "sync_now") {
+    const String requestId = doc["request_id"] | "";
+    if (requestId.isEmpty()) {
+      Serial.println("[MQTT] sync_now ignored: missing request_id");
+      return;
+    }
+    if (requestId == _lastHandledSyncRequestId) {
+      Serial.printf("[MQTT] sync_now duplicate ignored: %s\n", requestId.c_str());
+      return;
+    }
+    if (millis() - _lastSyncNowMs < 2000) {
+      Serial.println("[MQTT] sync_now ignored: rate-limited");
+      return;
+    }
+
+    const String syncPayload = _telemetryBuilder.buildJson(
+      _snapshot,
+      _config.cloud.completePayload,
+      _config.cloud.mcbeamCompatPayload,
+      true,
+      requestId
+    );
+    if (_mqtt.publish(_config.cloud, syncPayload)) {
+      _lastHandledSyncRequestId = requestId;
+      _lastSyncNowMs = millis();
+      Serial.printf("[MQTT] sync_now delivered for request_id=%s\n", requestId.c_str());
+    } else {
+      Serial.printf("[MQTT] sync_now publish failed for request_id=%s\n", requestId.c_str());
     }
   }
 }
