@@ -316,6 +316,29 @@ td input[readonly]{
 .kv{display:grid;grid-template-columns:1fr 1fr;gap:6px 10px;margin-top:8px}
 .kv-row{display:flex;justify-content:space-between;gap:8px;font-size:12px;color:var(--muted)}
 .kv-row b{color:var(--text);font-weight:700}
+.tabs{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0 14px}
+.tab-btn{background:#0a1939;color:var(--muted);border:1px solid var(--line);padding:8px 12px;border-radius:999px;cursor:pointer}
+.tab-btn.active{color:#09142c;background:var(--accent);border-color:#f0c62f;font-weight:700}
+.tab-pane{display:none}
+.tab-pane.active{display:block}
+.modebar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:8px 0 14px}
+.mode-chip{padding:6px 10px;border-radius:999px;border:1px solid var(--line);font-size:12px;cursor:pointer;color:var(--muted);background:#0a1939}
+.mode-chip.active{color:#09142c;background:#ffd447;border-color:#f0c62f;font-weight:700}
+.advanced-only{display:none}
+body.show-advanced .advanced-only{display:flex}
+body.show-advanced .advanced-only-grid{display:block}
+.wizard-steps{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px}
+.wizard-step{padding:10px;border:1px solid var(--line);border-radius:10px;background:#0a1939}
+.wizard-step h4{margin:0 0 6px;font-size:13px;color:var(--accent)}
+.wizard-step p{margin:0;color:var(--muted);font-size:12px}
+.sticky-actions{
+  position:sticky;bottom:0;z-index:20;margin-top:16px;padding:10px 0;
+  background:linear-gradient(180deg, rgba(7,21,47,0), rgba(7,21,47,.95) 35%, rgba(7,21,47,.98));
+  border-top:1px solid rgba(42,63,102,.6)
+}
+.inline-error{margin-top:8px;padding:8px 10px;border:1px solid rgba(242,110,125,.6);background:rgba(242,110,125,.14);border-radius:10px;color:#ffd8dd;font-size:12px;display:none}
+.audit-list{margin:8px 0 0;padding-left:18px;color:var(--muted);font-size:12px}
+.audit-list li{margin:4px 0}
 @media (max-width: 780px){
   .grid-2{grid-template-columns:1fr}
 }
@@ -1191,21 +1214,47 @@ String WebUI::settingsHtml() const {
   html += "<div class='actions'><a class='btn btn-secondary' href='/firmware'>Firmware</a><a class='btn btn-secondary' href='/'>Back to Dashboard</a></div>";
   html += "</div>";
 
-  html += "<form method='POST' action='/save'>";
+  html += "<form id='settings-form' method='POST' action='/save'>";
+  html += "<div class='modebar'><span class='label'>View Mode</span>";
+  html += "<button class='mode-chip active' type='button' id='mode-basic' onclick='setViewMode(false)'>Basic</button>";
+  html += "<button class='mode-chip' type='button' id='mode-advanced' onclick='setViewMode(true)'>Advanced</button>";
+  html += "</div>";
+  html += "<div class='tabs'>";
+  html += "<button type='button' class='tab-btn active' data-tab='tab-provisioning' onclick='showTab(\"tab-provisioning\")'>Provisioning</button>";
+  html += "<button type='button' class='tab-btn' data-tab='tab-identity' onclick='showTab(\"tab-identity\")'>Identity</button>";
+  html += "<button type='button' class='tab-btn' data-tab='tab-cloud' onclick='showTab(\"tab-cloud\")'>Cloud/MQTT</button>";
+  html += "<button type='button' class='tab-btn' data-tab='tab-devices' onclick='showTab(\"tab-devices\")'>Devices</button>";
+  html += "<button type='button' class='tab-btn' data-tab='tab-fuel' onclick='showTab(\"tab-fuel\")'>Fuel</button>";
+  html += "<button type='button' class='tab-btn' data-tab='tab-alarms' onclick='showTab(\"tab-alarms\")'>Alarms</button>";
+  html += "</div>";
+  html += "<div id='tab-provisioning' class='tab-pane active'>";
+  html += "<div class='section-title'>Commissioning Wizard</div><div class='card card-compact'>";
+  html += "<div class='wizard-steps'>";
+  html += "<div class='wizard-step'><h4>Step 1: Import Secrets</h4><p>Paste generated device_secrets.h and click Import.</p></div>";
+  html += "<div class='wizard-step'><h4>Step 2: Checklist</h4><p>Ensure required MQTT credentials and cert fields are marked complete.</p></div>";
+  html += "<div class='wizard-step'><h4>Step 3: Test MQTT</h4><p>Run broker connectivity test before saving.</p><div class='actions'><button class='btn btn-secondary' type='button' onclick='runSettingsMqttTest()'>Test MQTT</button></div><pre id='settings-mqtt-test' class='tip'>No test run yet.</pre></div>";
+  html += "<div class='wizard-step'><h4>Step 4: Save + Reboot</h4><p>Save configuration and reboot if needed for field deployment.</p></div>";
+  html += "</div>";
+  html += "</div>";
+  html += "<div class='section-title'>Audit Trail</div><div class='card card-compact'><div class='tip'>Recent commissioning actions on this browser</div><ul id='audit-list' class='audit-list'></ul></div>";
+  html += "</div>";
+  html += "<div id='tab-identity' class='tab-pane'>";
 
   html += "<div class='section-title'>Identity</div><div class='card'><div class='form-grid'>";
   html += "<div class='field'><label>Device ID</label><input name='device_id' value='" + htmlEscape(_config.identity.deviceId) + "'></div>";
   html += "<div class='field'><label>Site ID</label><input name='site_id' value='" + htmlEscape(_config.identity.siteId) + "'></div>";
   html += "<div class='field'><label>Site Name</label><input name='site_name' value='" + htmlEscape(_config.identity.siteName) + "'></div>";
   html += "</div></div>";
+  html += "</div>";
 
+  html += "<div id='tab-cloud' class='tab-pane'>";
   html += "<div class='section-title'>Cloud</div><div class='card'><div class='form-grid'>";
   html += "<div style='grid-column:1/-1'><div class='label'>HTTP Transport</div></div>";
   html += "<div class='field'><label>Base URL</label><input name='base_url' value='" + htmlEscape(_config.cloud.baseUrl) + "'></div>";
   html += "<div class='field'><label>Telemetry Path</label><input name='telemetry_path' value='" + htmlEscape(_config.cloud.telemetryPath) + "'></div>";
-  html += "<div class='field'><label>Bearer Token</label><input name='token' value='" + htmlEscape(_config.cloud.authToken) + "'></div>";
+  html += "<div class='field advanced-only'><label>Bearer Token</label><input name='token' value='" + htmlEscape(_config.cloud.authToken) + "'></div>";
   html += "<div class='field'><label>Report Interval (ms)</label><input name='report_ms' type='number' min='1000' value='" + String(_config.cloud.reportIntervalMs) + "'></div>";
-  html += "<div class='field'><label>Telemetry Payload Mode</label><select name='payload_mode'>";
+  html += "<div class='field advanced-only'><label>Telemetry Payload Mode</label><select name='payload_mode'>";
   html += "<option value='compact'";
   html += (_config.cloud.completePayload ? "" : " selected");
   html += ">Compact (default)</option>";
@@ -1213,7 +1262,7 @@ String WebUI::settingsHtml() const {
   html += (_config.cloud.completePayload ? " selected" : "");
   html += ">Complete (full site dump)</option>";
   html += "</select></div>";
-  html += "<div class='field'><label>Schema Compatibility</label><label class='check'><input type='checkbox' name='payload_mcbeam' ";
+  html += "<div class='field advanced-only'><label>Schema Compatibility</label><label class='check'><input type='checkbox' name='payload_mcbeam' ";
   html += (_config.cloud.mcbeamCompatPayload ? "checked" : "");
   html += ">Use McBeam-compatible JSON fields</label></div>";
   html += "<div style='grid-column:1/-1;height:1px;background:var(--line);margin:4px 0 6px'></div>";
@@ -1252,7 +1301,7 @@ String WebUI::settingsHtml() const {
   html += "<textarea name='mqtt_ca_pem' style='display:none'>" + htmlEscape(_config.cloud.mqttCaCertPem) + "</textarea>";
   html += "<textarea name='mqtt_client_cert_pem' style='display:none'>" + htmlEscape(_config.cloud.mqttClientCertPem) + "</textarea>";
   html += "<textarea name='mqtt_client_key_pem' style='display:none'>" + htmlEscape(_config.cloud.mqttClientKeyPem) + "</textarea>";
-  html += "<div class='field'><label>HTTP Fallback</label><label class='check'><input type='checkbox' name='http_fb' ";
+  html += "<div class='field advanced-only'><label>HTTP Fallback</label><label class='check'><input type='checkbox' name='http_fb' ";
   html += (_config.cloud.httpFallbackEnabled ? "checked" : "");
   html += ">Use HTTP when MQTT publish fails</label></div>";
   html += "</div></div>";
@@ -1263,9 +1312,11 @@ String WebUI::settingsHtml() const {
   html += "<div class='actions'><button class='btn btn-secondary' type='button' onclick='importDeviceSecrets()'>Import From Text</button>";
   html += "<span id='device-secrets-status' class='tip' style='margin-left:10px'>No import yet.</span></div>";
   html += "</div>";
+  html += "</div>";
 
+  html += "<div id='tab-devices' class='tab-pane'>";
   html += "<div class='section-title'>RS485 Network</div><div class='card'><div class='form-grid'>";
-  html += "<div class='field'><label>RS485 Baud</label><input name='rs485_baud' type='number' min='1200' value='" + String(_config.rs485.baudRate) + "'></div>";
+  html += "<div class='field advanced-only'><label>RS485 Baud</label><input name='rs485_baud' type='number' min='1200' value='" + String(_config.rs485.baudRate) + "'></div>";
   html += "</div><p class='tip'>Shared bus settings used by PZEM, generator modules and rectifier battery modules.</p></div>";
 
   html += "<div class='section-title'>PZEM Meter</div><div class='card'><div class='form-grid'>";
@@ -1275,11 +1326,11 @@ String WebUI::settingsHtml() const {
   html += ">Enable PZEM</label></div>";
   html += "</div></div>";
 
-  html += "<div class='section-title'>Generator Modules</div><div class='card'><div class='form-grid'>";
+  html += "<details class='card'><summary class='section-title' style='margin:0 0 10px'>Generator Modules</summary><div class='form-grid'>";
   html += "<div class='field'><label>Generator Monitor</label><label class='check'><input type='checkbox' name='gen_en' ";
   html += (_config.rs485.generatorEnabled ? "checked" : "");
   html += ">Enable Generator</label></div>";
-  html += "<div class='field'><label>Generator Count</label><select name='gen_count'>";
+  html += "<div class='field advanced-only'><label>Generator Count</label><select name='gen_count'>";
   for (int i = 1; i <= Rs485Config::MAX_GENERATORS; ++i) {
     html += "<option value='" + String(i) + "'";
     html += (_config.rs485.generatorCount == i ? " selected" : "");
@@ -1289,20 +1340,20 @@ String WebUI::settingsHtml() const {
   html += "</div>";
   html += "<div class='table-wrap'><table><thead><tr><th>Generator</th><th>Slave ID</th><th>Model</th></tr></thead><tbody>";
   html += generatorRowsHtml(_config.rs485);
-  html += "</tbody></table></div><p class='tip'>Configure slave ID and model per generator module.</p></div>";
+  html += "</tbody></table></div><p class='tip'>Configure slave ID and model per generator module.</p></details>";
 
-  html += "<div class='section-title'>Rectifier Battery Modules</div><div class='card'><div class='form-grid'>";
+  html += "<details class='card'><summary class='section-title' style='margin:0 0 10px'>Rectifier Battery Modules</summary><div class='form-grid'>";
   html += "<div class='field'><label>Battery Monitor</label><label class='check'><input type='checkbox' name='batt_en' ";
   html += (_config.rs485.batteryEnabled ? "checked" : "");
   html += ">Enable Battery Monitor</label></div>";
-  html += "<div class='field'><label>Rectifier Count</label><select name='batt_rect_count'>";
+  html += "<div class='field advanced-only'><label>Rectifier Count</label><select name='batt_rect_count'>";
   for (int i = 1; i <= 4; ++i) {
     html += "<option value='" + String(i) + "'";
     html += (_config.rs485.rectifierCount == i ? " selected" : "");
     html += ">" + String(i) + "</option>";
   }
   html += "</select></div>";
-  html += "<div class='field'><label>Battery Bank Count</label><select name='batt_bank_count'>";
+  html += "<div class='field advanced-only'><label>Battery Bank Count</label><select name='batt_bank_count'>";
   for (int i = 1; i <= Rs485Config::MAX_BATTERY_BANKS; ++i) {
     html += "<option value='" + String(i) + "'";
     html += (_config.rs485.batteryBankCount == i ? " selected" : "");
@@ -1312,9 +1363,11 @@ String WebUI::settingsHtml() const {
   html += "</div>";
   html += "<div class='table-wrap'><table><thead><tr><th>Group</th><th>Bank</th><th>Slave ID</th><th>Battery Model</th></tr></thead><tbody>";
   html += batteryBankRowsHtml(_config.rs485);
-  html += "</tbody></table></div><p class='tip'>Battery banks are grouped 4 banks per rectifier.</p></div>";
+  html += "</tbody></table></div><p class='tip'>Battery banks are grouped 4 banks per rectifier.</p></details>";
+  html += "</div>";
 
-  html += "<div class='section-title'>Fuel Sensor</div><div class='card'><div class='form-grid'>";
+  html += "<div id='tab-fuel' class='tab-pane'>";
+  html += "<details class='card'><summary class='section-title' style='margin:0 0 10px'>Fuel Sensor</summary><div class='form-grid'>";
   html += "<div class='field'><label>Tank Length (cm)</label><input name='fuel_tank_l' type='number' step='0.1' min='0' value='" + String(_config.fuel.tankLengthCm, 1) + "'></div>";
   html += "<div class='field'><label>Tank Diameter (cm) - horizontal cylinder</label><input name='fuel_tank_d' type='number' step='0.1' min='0' value='" + String(_config.fuel.tankDiameterCm, 1) + "'></div>";
   html += "<div class='field'><label>Sensor Reach / Float Travel (cm)</label><input name='fuel_sensor_h' type='number' step='0.1' min='0' value='" + String(_config.fuel.sensorReachHeightCm, 1) + "'></div>";
@@ -1324,7 +1377,7 @@ String WebUI::settingsHtml() const {
   html += "<label class='check'><input type='checkbox' name='fuel_en' ";
   html += (_config.fuel.enabled ? "checked" : "");
   html += ">Enable Fuel Sensor</label></div>";
-  html += "<div class='field'><label>Fuel Calibration Tool</label><button class='btn btn-secondary' type='button' onclick='openFuelCalModal()'>Calibrate from Live Raw</button>";
+  html += "<div class='field' id='fuel-cal-field'><label>Fuel Calibration Tool</label><button id='fuel-cal-btn' class='btn btn-secondary' type='button' onclick='openFuelCalModal()'>Calibrate from Live Raw</button>";
   html += "<div class='tip'>Capture points at 0/25/50/75/100% of sensor stroke height. Hold level steady 12-20s before capture.</div></div>";
   html += "</div>";
   html += "<div class='table-wrap'><table><thead><tr><th>Sensor Stroke Level</th><th>Raw Value</th></tr></thead><tbody>";
@@ -1335,8 +1388,9 @@ String WebUI::settingsHtml() const {
   html += "<tr><td>0% stroke</td><td><input name='fuel_r0' type='number' readonly value='" + String(_config.fuel.raw0) + "'></td></tr>";
   html += "</tbody></table></div>";
   html += "<p class='tip'>Liters are derived from horizontal-cylinder geometry using calibrated sensor height plus dead-space compensation. Use fuel-drop checks (e.g., 20L) to validate field accuracy.</p>";
-  html += "</div></div>";
+  html += "</details></div>";
 
+  html += "<div id='tab-alarms' class='tab-pane'>";
   html += "<div class='section-title section-title-center'>Digital Alarm Contact Mode</div><div class='card card-compact'>";
   html += "<div class='table-wrap'><table id='alarm-mode-table'><thead><tr><th>Alarm Input</th><th>Contact Mode</th></tr></thead><tbody>";
   html += "<tr><td>AC Mains Rectifier</td><td>";
@@ -1360,7 +1414,7 @@ String WebUI::settingsHtml() const {
   html += "</tbody></table></div>";
   html += "<p class='tip'>NC uses active low input logic. NO uses active high input logic.</p>";
   html += "<p class='tip'>Changes are saved to local preferences immediately. Polling behavior updates without reflashing.</p>";
-  html += "</div>";
+  html += "</div></div>";
 
   html += R"HTML(
 <div id='fuel-cal-modal' class='modal-backdrop' onclick='closeFuelCalModal(event)'>
@@ -1383,7 +1437,8 @@ String WebUI::settingsHtml() const {
 </div>
 )HTML";
 
-  html += "<div class='actions'><button class='btn' type='submit'>Save Configuration</button><a class='btn btn-secondary' href='/'>Cancel</a></div>";
+  html += "<div id='settings-error' class='inline-error'></div>";
+  html += "<div class='sticky-actions'><div class='actions'><button class='btn' type='submit'>Save Configuration</button><button class='btn btn-secondary' type='button' onclick='runSettingsMqttTest()'>Test MQTT</button><a class='btn btn-secondary' href='/'>Cancel</a></div></div>";
   html += R"HTML(
 </form>
 <script>
@@ -1510,8 +1565,10 @@ function importDeviceSecrets() {
   if (status) {
     if (applied > 0) {
       status.textContent = `Imported ${applied} field(s). Click Save Configuration.`;
+      addAudit(`Secrets imported (${applied} fields)`);
     } else {
       status.textContent = 'No supported #define entries found.';
+      addAudit('Secrets import attempted (no supported fields)');
     }
   }
   refreshSecretsChecklist();
@@ -1540,7 +1597,144 @@ function refreshSecretsChecklist() {
   setChecklistState('mqtt_client_cert_pem', 'Client certificate');
   setChecklistState('mqtt_client_key_pem', 'Client private key');
 }
+
+function showTab(tabId) {
+  document.querySelectorAll('.tab-pane').forEach((pane) => pane.classList.remove('active'));
+  document.querySelectorAll('.tab-btn').forEach((btn) => btn.classList.remove('active'));
+  const pane = document.getElementById(tabId);
+  if (pane) pane.classList.add('active');
+  const btn = document.querySelector(`.tab-btn[data-tab='${tabId}']`);
+  if (btn) btn.classList.add('active');
+}
+
+function setViewMode(advanced) {
+  document.body.classList.toggle('show-advanced', !!advanced);
+  const b = document.getElementById('mode-basic');
+  const a = document.getElementById('mode-advanced');
+  if (b) b.classList.toggle('active', !advanced);
+  if (a) a.classList.toggle('active', !!advanced);
+  localStorage.setItem('settings_view_mode', advanced ? 'advanced' : 'basic');
+}
+
+function addAudit(message) {
+  const key = 'powereye_settings_audit';
+  let items = [];
+  try { items = JSON.parse(localStorage.getItem(key) || '[]'); } catch (_) { items = []; }
+  const stamp = new Date().toLocaleString();
+  items.unshift(`${stamp}: ${message}`);
+  if (items.length > 8) items = items.slice(0, 8);
+  localStorage.setItem(key, JSON.stringify(items));
+  renderAudit();
+}
+
+function renderAudit() {
+  const ul = document.getElementById('audit-list');
+  if (!ul) return;
+  let items = [];
+  try { items = JSON.parse(localStorage.getItem('powereye_settings_audit') || '[]'); } catch (_) { items = []; }
+  if (!items.length) {
+    ul.innerHTML = '<li>No actions yet.</li>';
+    return;
+  }
+  ul.innerHTML = items.map((i) => `<li>${i}</li>`).join('');
+}
+
+async function runSettingsMqttTest() {
+  const out = document.getElementById('settings-mqtt-test');
+  if (out) out.textContent = 'Running MQTT test...';
+  try {
+    const startRes = await fetch('/api/mqtt_test?action=start', { cache: 'no-store' });
+    if (!startRes.ok) {
+      if (out) out.textContent = `MQTT test start failed: HTTP ${startRes.status}`;
+      return;
+    }
+    for (let i = 0; i < 60; i++) {
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      const res = await fetch('/api/mqtt_test', { cache: 'no-store' });
+      if (!res.ok) {
+        if (out) out.textContent = `MQTT test failed: HTTP ${res.status}`;
+        return;
+      }
+      const state = await res.json();
+      if (state.running) continue;
+      const r = state.result || {};
+      if (out) out.textContent = JSON.stringify(r, null, 2);
+      addAudit(`MQTT test: ${r.ok ? 'success' : 'failed'}`);
+      return;
+    }
+    if (out) out.textContent = 'MQTT test timed out';
+    addAudit('MQTT test: timeout');
+  } catch (e) {
+    if (out) out.textContent = `MQTT test error: ${e}`;
+    addAudit('MQTT test: error');
+  }
+}
+
+function validateSettingsBeforeSave() {
+  const err = document.getElementById('settings-error');
+  if (!err) return true;
+  err.style.display = 'none';
+  err.textContent = '';
+
+  const mqttEnabled = document.querySelector("input[name='mqtt_en']")?.checked;
+  if (!mqttEnabled) return true;
+
+  const required = [
+    ['mqtt_host', 'MQTT broker host'],
+    ['mqtt_topic', 'MQTT topic'],
+    ['mqtt_client_id', 'MQTT client ID'],
+    ['mqtt_user', 'MQTT username'],
+    ['mqtt_pass', 'MQTT password']
+  ];
+  const missing = [];
+  for (const [key, label] of required) {
+    const v = (document.querySelector(`[name='${key}']`)?.value || '').trim();
+    if (!v) missing.push(label);
+  }
+
+  const mtls = document.querySelector("input[name='mqtt_mtls']")?.checked;
+  if (mtls) {
+    const cert = (document.querySelector("[name='mqtt_client_cert_pem']")?.value || '').trim();
+    const key = (document.querySelector("[name='mqtt_client_key_pem']")?.value || '').trim();
+    if (!cert) missing.push('Client certificate PEM');
+    if (!key) missing.push('Client private key PEM');
+  }
+
+  if (missing.length) {
+    err.textContent = `Please complete: ${missing.join(', ')}`;
+    err.style.display = 'block';
+    return false;
+  }
+  return true;
+}
+
+function refreshFuelUiState() {
+  const fuelEnabled = document.querySelector("input[name='fuel_en']")?.checked;
+  const cal = document.getElementById('fuel-cal-field');
+  if (cal) cal.style.display = fuelEnabled ? 'flex' : 'none';
+}
+
+const settingsForm = document.getElementById('settings-form');
+if (settingsForm) {
+  settingsForm.addEventListener('submit', (ev) => {
+    if (!validateSettingsBeforeSave()) {
+      ev.preventDefault();
+      return;
+    }
+    addAudit('Configuration saved');
+  });
+}
+
+const fuelEnableCheckbox = document.querySelector("input[name='fuel_en']");
+if (fuelEnableCheckbox) {
+  fuelEnableCheckbox.addEventListener('change', refreshFuelUiState);
+}
+
 refreshSecretsChecklist();
+renderAudit();
+setViewMode(localStorage.getItem('settings_view_mode') === 'advanced');
+showTab('tab-provisioning');
+refreshFuelUiState();
 </script>
 </div></body></html>)HTML";
   return html;
