@@ -209,6 +209,21 @@ body{
 .top{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:14px}
 .title{margin:0;font-size:22px;letter-spacing:.2px}
 .subtitle{margin:3px 0 0;color:var(--muted);font-size:12px}
+.status-strip{
+  display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:space-between;
+}
+.health-chips{display:flex;flex-wrap:wrap;gap:8px}
+.health-chip{
+  display:inline-flex;align-items:center;gap:8px;
+  padding:6px 10px;border:1px solid var(--line);border-radius:999px;background:#0a1939;font-size:12px
+}
+.health-chip b{font-size:11px;letter-spacing:.5px;color:var(--muted);font-weight:600}
+.health-chip span{font-weight:700}
+.meta-right{display:flex;gap:14px;align-items:center;flex-wrap:wrap;color:var(--muted);font-size:12px}
+.pill{
+  display:inline-flex;align-items:center;gap:6px;padding:4px 8px;border-radius:999px;
+  border:1px solid var(--line);background:#0a1939;color:var(--muted)
+}
 .btn{
   display:inline-block;text-decoration:none;background:var(--accent);color:#09142c;font-weight:700;
   padding:10px 14px;border-radius:10px;border:1px solid #f0c62f
@@ -341,6 +356,7 @@ body.show-advanced .advanced-only-grid{display:block}
 .audit-list li{margin:4px 0}
 @media (max-width: 780px){
   .grid-2{grid-template-columns:1fr}
+  .status-strip{align-items:flex-start}
 }
 </style></head><body>)HTML";
   return html;
@@ -929,6 +945,20 @@ String WebUI::dashboardHtml() const {
   html += "<a class='btn' href='/settings'>Configuration</a>";
   html += "</div>";
 
+  html += "<div class='card status-strip'>";
+  html += "<div class='health-chips'>";
+  html += "<div class='health-chip'><b>Network</b><span id='network-health'>" + String(_snapshot.networkOnline ? "ONLINE" : "OFFLINE") + "</span></div>";
+  html += "<div class='health-chip'><b>Grid Meter</b><span id='energy-health'>" + String(_snapshot.energy.online ? "ONLINE" : "OFFLINE") + "</span></div>";
+  html += "<div class='health-chip'><b>Genset</b><span id='genset-health'>" + String(genOnline ? "ONLINE" : "OFFLINE") + "</span></div>";
+  html += "<div class='health-chip'><b>Fuel</b><span id='fuel-health'>" + String(_snapshot.fuel.online ? "ONLINE" : "OFFLINE") + "</span></div>";
+  html += "</div>";
+  html += "<div class='meta-right'>";
+  html += "<span class='pill'>Telemetry age <b id='telemetry-age'>0s</b></span>";
+  html += "<span class='pill'>Queue <b id='queue-pill'>" + String(_queue.size()) + "</b></span>";
+  html += "<span class='pill'>Transport <b id='transport-pill'>" + htmlEscape(_snapshot.transportStatus.length() ? _snapshot.transportStatus : "unknown") + "</b></span>";
+  html += "</div>";
+  html += "</div>";
+
   html += "<div class='grid'>";
   html += "<div class='card'><div class='label'>Network</div><div class='value value-sm'><span id='network-badge' class='badge ";
   html += statusClass(_snapshot.networkOnline);
@@ -942,13 +972,15 @@ String WebUI::dashboardHtml() const {
 
   html += "<div class='card'><div class='label'>Queue Pending</div><div class='value' id='queue-value'>";
   html += String(_queue.size());
-  html += "</div><div class='meta'>Records waiting for upload</div></div>";
+  html += "</div><div class='meta'>Records waiting for upload</div><div class='meta'>Last poll <span id='last-poll'>just now</span></div></div>";
 
   html += "<div class='card'><div class='label'>Device</div><div class='value value-sm' id='device-id'>";
   html += htmlEscape(_snapshot.deviceId);
   html += "</div><div class='meta'>Uptime <span id='uptime-s'>";
   html += String(_snapshot.uptimeMs / 1000UL);
-  html += "</span> s</div></div>";
+  html += "</span> s</div><div class='meta'>Last error <span id='last-error-text'>";
+  html += htmlEscape(_snapshot.lastError.length() ? _snapshot.lastError : "none");
+  html += "</span></div></div>";
 
   html += "</div>";
 
@@ -997,8 +1029,7 @@ String WebUI::dashboardHtml() const {
   html += "</div></div>";
 
   html += "</div>";
-  html += "<div class='section-title'>Diagnostics</div>";
-  html += "<div class='card diag'>";
+  html += "<details class='card diag'><summary class='section-title' style='margin:0'>Advanced Diagnostics</summary>";
   html += "<div class='label'>Network & AWS Tests</div>";
   html += "<div class='actions'><button class='btn btn-secondary' type='button' onclick='runNetworkDiag()'>Test Network</button>";
   html += "<button class='btn btn-secondary' type='button' onclick='runAwsTest()'>Test AWS Server</button>";
@@ -1006,14 +1037,30 @@ String WebUI::dashboardHtml() const {
   html += "<div class='meta'>Network Diagnostics</div><pre id='network-diag-output'>Press Test Network to run AT diagnostics.</pre>";
   html += "<div class='meta'>AWS Test Result</div><pre id='aws-test-output'>Press Test AWS Server to validate API reachability.</pre>";
   html += "<div class='meta'>MQTT Test Result</div><pre id='mqtt-test-output'>Press Test MQTT to validate broker connectivity and publish.</pre>";
-  html += "</div>";
+  html += "</details>";
   html += R"HTML(<script>
 const BADGE_OK = "badge badge-ok";
 const BADGE_OFF = "badge badge-off";
+let lastStatusSuccessMs = Date.now();
 
 function setText(id, value) {
   const el = document.getElementById(id);
   if (el) el.textContent = value;
+}
+
+function setHealthText(id, online) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.textContent = online ? "ONLINE" : "OFFLINE";
+  el.style.color = online ? "var(--ok)" : "var(--off)";
+}
+
+function formatAge(seconds) {
+  if (!Number.isFinite(seconds) || seconds < 0) return "n/a";
+  if (seconds < 60) return `${Math.round(seconds)}s`;
+  const mins = Math.floor(seconds / 60);
+  const secs = Math.round(seconds % 60);
+  return `${mins}m ${secs}s`;
 }
 
 function setBadge(id, online) {
@@ -1180,11 +1227,16 @@ async function refreshStatus() {
     const res = await fetch('/api/status', { cache: 'no-store' });
     if (!res.ok) return;
     const s = await res.json();
+    lastStatusSuccessMs = Date.now();
     setText('site-line', `${s.site_id} | ${s.site_name}`);
     setText('device-id', s.device_id);
     setText('rssi-value', s.rssi);
     setText('phone-number', s.phone_number || 'N/A');
     setText('queue-value', s.queue);
+    setText('queue-pill', s.queue);
+    setText('transport-pill', (s.transport_status || 'unknown'));
+    setText('last-error-text', (s.last_error || 'none'));
+    setText('last-poll', new Date(lastStatusSuccessMs).toLocaleTimeString());
     setText('energy-voltage-sub', Number(s.energy_voltage).toFixed(1));
     setText('energy-power-sub', Number(s.energy_power).toFixed(1));
     setText('energy-pf-sub', Number(s.energy_pf).toFixed(2));
@@ -1207,8 +1259,17 @@ async function refreshStatus() {
     setBadge('network-badge', !!s.network_online);
     setBadge('energy-badge', !!s.energy_online);
     setBadge('genset-badge', !!gen?.online);
+    setHealthText('network-health', !!s.network_online);
+    setHealthText('energy-health', !!s.energy_online);
+    setHealthText('genset-health', !!gen?.online);
+    setHealthText('fuel-health', !!s.fuel_online);
   } catch (_) {}
 }
+
+setInterval(() => {
+  const ageSeconds = (Date.now() - lastStatusSuccessMs) / 1000;
+  setText('telemetry-age', formatAge(ageSeconds));
+}, 1000);
 
 setInterval(refreshStatus, 5000);
 refreshStatus();
