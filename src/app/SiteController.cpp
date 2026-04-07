@@ -214,6 +214,8 @@ void SiteController::update() {
     result += "\"mqtt_host\":\"" + jsonEscape(_config.cloud.mqttHost) + "\",";
     result += "\"mqtt_port\":" + String(_config.cloud.mqttPort) + ",";
     result += "\"mqtt_tls\":" + String(_config.cloud.mqttTls ? "true" : "false") + ",";
+    result += "\"mqtt_mtls\":" + String(_config.cloud.mqttMtlsEnabled ? "true" : "false") + ",";
+    result += "\"mqtt_tls_sni\":\"" + jsonEscape(_config.cloud.mqttTlsHostname) + "\",";
     result += "\"mqtt_topic\":\"" + jsonEscape(_config.cloud.mqttTelemetryTopic) + "\",";
     result += "\"mqtt_cmd_topic\":\"" + jsonEscape(_config.cloud.mqttCmdTopic) + "\",";
     result += "\"mqtt_status_topic\":\"" + jsonEscape(_config.cloud.mqttStatusTopic) + "\",";

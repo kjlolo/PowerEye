@@ -71,6 +71,11 @@ struct CloudConfig {
   String mqttTelemetryTopic = "powereye/telemetry";
   String mqttCmdTopic = "powereye/cmd";
   String mqttStatusTopic = "powereye/status";
+  bool mqttMtlsEnabled = false;
+  String mqttTlsHostname = "";
+  String mqttCaCertPem = "";
+  String mqttClientCertPem = "";
+  String mqttClientKeyPem = "";
   bool httpFallbackEnabled = true;
 };
 

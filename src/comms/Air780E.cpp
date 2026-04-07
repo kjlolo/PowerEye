@@ -551,9 +551,16 @@ bool Air780E::mqttPublish(const String& host,
                           const String& username,
                           const String& password,
                           const String& topic,
-                          const String& payload) {
+                          const String& payload,
+                          bool useMtls,
+                          const String& tlsHostname,
+                          const String& caCertPem,
+                          const String& clientCertPem,
+                          const String& clientKeyPem) {
   _lastError = "";
-  if (!ensureMqttConnected(host, port, useTls, clientId, username, password)) {
+  if (!ensureMqttConnected(
+      host, port, useTls, clientId, username, password,
+      useMtls, tlsHostname, caCertPem, clientCertPem, clientKeyPem)) {
     return false;
   }
 
@@ -578,8 +585,15 @@ bool Air780E::mqttEnsureConnected(const String& host,
                                   bool useTls,
                                   const String& clientId,
                                   const String& username,
-                                  const String& password) {
-  return ensureMqttConnected(host, port, useTls, clientId, username, password);
+                                  const String& password,
+                                  bool useMtls,
+                                  const String& tlsHostname,
+                                  const String& caCertPem,
+                                  const String& clientCertPem,
+                                  const String& clientKeyPem) {
+  return ensureMqttConnected(
+    host, port, useTls, clientId, username, password,
+    useMtls, tlsHostname, caCertPem, clientCertPem, clientKeyPem);
 }
 
 bool Air780E::mqttSubscribe(const String& topic, uint8_t qos) {
@@ -646,12 +660,102 @@ String Air780E::lastError() const {
   return _lastError;
 }
 
+bool Air780E::uploadTlsFile(const String& fileName, const String& contents) {
+  if (fileName.isEmpty() || contents.isEmpty()) {
+    _lastError = "tls_file_empty";
+    return false;
+  }
+
+  String out;
+  sendCommandAny("AT+FSDEL=\"" + quoteAt(fileName) + "\"", "OK", "ERROR", 3000, &out);
+  if (!sendCommandAny("AT+FSCREATE=\"" + quoteAt(fileName) + "\"", "OK", "ERROR", 3000, &out)) {
+    _lastError = "tls_fscreate_failed:" + compactAtSnippet(out);
+    return false;
+  }
+  if (!sendCommand("AT+FSWRITE=\"" + quoteAt(fileName) + "\",0," + String(contents.length()) + ",15", ">", 12000, &out)) {
+    _lastError = "tls_fswrite_prompt_failed:" + compactAtSnippet(out);
+    return false;
+  }
+  clearRx();
+  _serial.print(contents);
+  if (!sendCommand("", "OK", 30000, &out)) {
+    _lastError = "tls_fswrite_failed:" + compactAtSnippet(out);
+    return false;
+  }
+  return true;
+}
+
+bool Air780E::mqttConfigureTls(bool useMtls,
+                               const String& host,
+                               const String& tlsHostname,
+                               const String& caCertPem,
+                               const String& clientCertPem,
+                               const String& clientKeyPem) {
+  const String sni = tlsHostname.isEmpty() ? host : tlsHostname;
+  const String key = String(useMtls ? "2" : "1") + "|" + sni + "|" +
+                     String(caCertPem.length()) + "|" +
+                     String(clientCertPem.length()) + "|" +
+                     String(clientKeyPem.length());
+  if (_mqttTlsConfigKey == key) {
+    return true;
+  }
+
+  if (!caCertPem.isEmpty()) {
+    if (!uploadTlsFile("powereye_ca.crt", caCertPem)) {
+      return false;
+    }
+    if (!sendCommand("AT+SSLCFG=\"cacert\",88,\"powereye_ca.crt\"", "OK", 5000)) {
+      _lastError = "tls_cacert_cfg_failed";
+      return false;
+    }
+  }
+
+  if (useMtls) {
+    if (clientCertPem.isEmpty() || clientKeyPem.isEmpty()) {
+      _lastError = "tls_mtls_missing_cert_or_key";
+      return false;
+    }
+    if (!uploadTlsFile("powereye_client.crt", clientCertPem)) {
+      return false;
+    }
+    if (!uploadTlsFile("powereye_client.key", clientKeyPem)) {
+      return false;
+    }
+    if (!sendCommand("AT+SSLCFG=\"clientcert\",88,\"powereye_client.crt\"", "OK", 5000)) {
+      _lastError = "tls_clientcert_cfg_failed";
+      return false;
+    }
+    if (!sendCommand("AT+SSLCFG=\"clientkey\",88,\"powereye_client.key\"", "OK", 5000)) {
+      _lastError = "tls_clientkey_cfg_failed";
+      return false;
+    }
+  }
+
+  if (!sendCommand(String("AT+SSLCFG=\"seclevel\",88,") + (useMtls ? "2" : "1"), "OK", 5000)) {
+    _lastError = "tls_seclevel_cfg_failed";
+    return false;
+  }
+  if (!sni.isEmpty()) {
+    if (!sendCommand("AT+SSLCFG=\"hostname\",88,\"" + quoteAt(sni) + "\"", "OK", 5000)) {
+      _lastError = "tls_hostname_cfg_failed";
+      return false;
+    }
+  }
+  _mqttTlsConfigKey = key;
+  return true;
+}
+
 bool Air780E::ensureMqttConnected(const String& host,
                                   uint16_t port,
                                   bool useTls,
                                   const String& clientId,
                                   const String& username,
-                                  const String& password) {
+                                  const String& password,
+                                  bool useMtls,
+                                  const String& tlsHostname,
+                                  const String& caCertPem,
+                                  const String& clientCertPem,
+                                  const String& clientKeyPem) {
   if (host.isEmpty()) {
     _lastError = "mqtt_host_empty";
     return false;
@@ -683,6 +787,12 @@ bool Air780E::ensureMqttConnected(const String& host,
   if (!sendCommand(mcfg, "OK", 6000, &out)) {
     _lastError = "mqtt_config_failed:" + compactAtSnippet(out);
     return false;
+  }
+
+  if (useTls) {
+    if (!mqttConfigureTls(useMtls, host, tlsHostname, caCertPem, clientCertPem, clientKeyPem)) {
+      return false;
+    }
   }
 
   const String hostQ = quoteAt(host);

@@ -17,13 +17,23 @@ public:
                    const String& username,
                    const String& password,
                    const String& topic,
-                   const String& payload);
+                   const String& payload,
+                   bool useMtls = false,
+                   const String& tlsHostname = "",
+                   const String& caCertPem = "",
+                   const String& clientCertPem = "",
+                   const String& clientKeyPem = "");
   bool mqttEnsureConnected(const String& host,
                            uint16_t port,
                            bool useTls,
                            const String& clientId,
                            const String& username,
-                           const String& password);
+                           const String& password,
+                           bool useMtls = false,
+                           const String& tlsHostname = "",
+                           const String& caCertPem = "",
+                           const String& clientCertPem = "",
+                           const String& clientKeyPem = "");
   bool mqttSubscribe(const String& topic, uint8_t qos = 1);
   bool mqttPollMessage(String& topic, String& payload);
   void mqttDisconnect();
@@ -43,7 +53,19 @@ private:
                            bool useTls,
                            const String& clientId,
                            const String& username,
-                           const String& password);
+                           const String& password,
+                           bool useMtls,
+                           const String& tlsHostname,
+                           const String& caCertPem,
+                           const String& clientCertPem,
+                           const String& clientKeyPem);
+  bool mqttConfigureTls(bool useMtls,
+                        const String& host,
+                        const String& tlsHostname,
+                        const String& caCertPem,
+                        const String& clientCertPem,
+                        const String& clientKeyPem);
+  bool uploadTlsFile(const String& fileName, const String& contents);
   bool mqttSendData(const String& command, const String& data, const String& expect, uint32_t timeoutMs);
   void clearRx();
 
@@ -54,4 +76,5 @@ private:
   String _mqttEndpoint;
   String _mqttSubscribedTopic;
   String _mqttRxBuffer;
+  String _mqttTlsConfigKey;
 };

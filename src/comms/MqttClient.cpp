@@ -18,7 +18,12 @@ bool MqttClient::ensureControlChannel(const CloudConfig& cloud) {
       cloud.mqttTls,
       clientId,
       cloud.mqttUsername,
-      cloud.mqttPassword)) {
+      cloud.mqttPassword,
+      cloud.mqttMtlsEnabled,
+      cloud.mqttTlsHostname,
+      cloud.mqttCaCertPem,
+      cloud.mqttClientCertPem,
+      cloud.mqttClientKeyPem)) {
     _controlReady = false;
     _statusPublished = false;
     return false;
@@ -51,7 +56,12 @@ bool MqttClient::publish(const CloudConfig& cloud, const String& payload) {
     cloud.mqttUsername,
     cloud.mqttPassword,
     cloud.mqttTelemetryTopic,
-    payload
+    payload,
+    cloud.mqttMtlsEnabled,
+    cloud.mqttTlsHostname,
+    cloud.mqttCaCertPem,
+    cloud.mqttClientCertPem,
+    cloud.mqttClientKeyPem
   );
 }
 

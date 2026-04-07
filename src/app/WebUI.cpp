@@ -429,6 +429,23 @@ void WebUI::begin() {
         _config.cloud.mqttStatusTopic = "powereye/status";
       }
     }
+    _config.cloud.mqttMtlsEnabled = request->hasParam("mqtt_mtls", true);
+    if (request->hasParam("mqtt_tls_sni", true)) {
+      _config.cloud.mqttTlsHostname = request->getParam("mqtt_tls_sni", true)->value();
+      _config.cloud.mqttTlsHostname.trim();
+    }
+    if (request->hasParam("mqtt_ca_pem", true)) {
+      _config.cloud.mqttCaCertPem = request->getParam("mqtt_ca_pem", true)->value();
+      _config.cloud.mqttCaCertPem.trim();
+    }
+    if (request->hasParam("mqtt_client_cert_pem", true)) {
+      _config.cloud.mqttClientCertPem = request->getParam("mqtt_client_cert_pem", true)->value();
+      _config.cloud.mqttClientCertPem.trim();
+    }
+    if (request->hasParam("mqtt_client_key_pem", true)) {
+      _config.cloud.mqttClientKeyPem = request->getParam("mqtt_client_key_pem", true)->value();
+      _config.cloud.mqttClientKeyPem.trim();
+    }
     _config.cloud.httpFallbackEnabled = request->hasParam("http_fb", true);
     _config.rs485.pzemEnabled = request->hasParam("pzem_en", true);
     if (request->hasParam("pzem_sid", true)) {
@@ -1215,6 +1232,13 @@ String WebUI::settingsHtml() const {
   html += "<div class='field'><label>MQTT TLS</label><label class='check'><input type='checkbox' name='mqtt_tls' ";
   html += (_config.cloud.mqttTls ? "checked" : "");
   html += ">Use TLS (recommended)</label></div>";
+  html += "<div class='field'><label>MQTT mTLS (Client Certificate)</label><label class='check'><input type='checkbox' name='mqtt_mtls' ";
+  html += (_config.cloud.mqttMtlsEnabled ? "checked" : "");
+  html += ">Enable client certificate authentication</label></div>";
+  html += "<div class='field'><label>TLS Hostname / SNI (optional)</label><input name='mqtt_tls_sni' value='" + htmlEscape(_config.cloud.mqttTlsHostname) + "'></div>";
+  html += "<div class='field' style='grid-column:1/-1'><label>CA Certificate PEM (optional)</label><textarea name='mqtt_ca_pem' rows='5' placeholder='-----BEGIN CERTIFICATE-----'>" + htmlEscape(_config.cloud.mqttCaCertPem) + "</textarea></div>";
+  html += "<div class='field' style='grid-column:1/-1'><label>Client Certificate PEM (for mTLS)</label><textarea name='mqtt_client_cert_pem' rows='5' placeholder='-----BEGIN CERTIFICATE-----'>" + htmlEscape(_config.cloud.mqttClientCertPem) + "</textarea></div>";
+  html += "<div class='field' style='grid-column:1/-1'><label>Client Private Key PEM (for mTLS)</label><textarea name='mqtt_client_key_pem' rows='6' placeholder='-----BEGIN PRIVATE KEY-----'>" + htmlEscape(_config.cloud.mqttClientKeyPem) + "</textarea></div>";
   html += "<div class='field'><label>HTTP Fallback</label><label class='check'><input type='checkbox' name='http_fb' ";
   html += (_config.cloud.httpFallbackEnabled ? "checked" : "");
   html += ">Use HTTP when MQTT publish fails</label></div>";
@@ -1406,11 +1430,20 @@ function parseDeviceSecretsDefines(text) {
   return defs;
 }
 
+function parseRawPemBlock(text, symbolName) {
+  const escaped = symbolName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const re = new RegExp(`static\\s+const\\s+char\\s+${escaped}\\s*\\[\\]\\s*PROGMEM\\s*=\\s*R\"EOF\\(([\\s\\S]*?)\\)EOF\";`, 'm');
+  const m = text.match(re);
+  if (!m || !m[1]) return '';
+  return m[1].trim();
+}
+
 function importDeviceSecrets() {
   const input = document.getElementById('device-secrets-input');
   const status = document.getElementById('device-secrets-status');
   if (!input) return;
-  const defs = parseDeviceSecretsDefines(input.value || '');
+  const rawText = input.value || '';
+  const defs = parseDeviceSecretsDefines(rawText);
   let applied = 0;
 
   const mappings = [
@@ -1429,6 +1462,31 @@ function importDeviceSecrets() {
         applied += 1;
       }
     }
+  }
+
+  const clientCertPem = parseRawPemBlock(rawText, 'DEVICE_CLIENT_CERT');
+  const clientKeyPem = parseRawPemBlock(rawText, 'DEVICE_CLIENT_KEY');
+  const caPem = parseRawPemBlock(rawText, 'MQTT_ROOT_CA');
+
+  const certArea = document.querySelector("textarea[name='mqtt_client_cert_pem']");
+  if (certArea && clientCertPem) {
+    certArea.value = clientCertPem;
+    applied += 1;
+  }
+  const keyArea = document.querySelector("textarea[name='mqtt_client_key_pem']");
+  if (keyArea && clientKeyPem) {
+    keyArea.value = clientKeyPem;
+    applied += 1;
+  }
+  const caArea = document.querySelector("textarea[name='mqtt_ca_pem']");
+  if (caArea && caPem) {
+    caArea.value = caPem;
+    applied += 1;
+  }
+
+  const mtlsEnable = document.querySelector("input[name='mqtt_mtls']");
+  if (mtlsEnable && clientCertPem && clientKeyPem) {
+    mtlsEnable.checked = true;
   }
 
   const mqttEnable = document.querySelector("input[name='mqtt_en']");

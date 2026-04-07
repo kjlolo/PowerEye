@@ -26,6 +26,11 @@ bool PreferencesStore::load(DeviceConfig& config) {
   config.cloud.mqttTelemetryTopic = _prefs.getString("mqtt_topic", config.cloud.mqttTelemetryTopic);
   config.cloud.mqttCmdTopic = _prefs.getString("mqtt_cmd_t", config.cloud.mqttCmdTopic);
   config.cloud.mqttStatusTopic = _prefs.getString("mqtt_st_t", config.cloud.mqttStatusTopic);
+  config.cloud.mqttMtlsEnabled = _prefs.getBool("mqtt_mtls", config.cloud.mqttMtlsEnabled);
+  config.cloud.mqttTlsHostname = _prefs.getString("mqtt_sni", config.cloud.mqttTlsHostname);
+  config.cloud.mqttCaCertPem = _prefs.getString("mqtt_ca", config.cloud.mqttCaCertPem);
+  config.cloud.mqttClientCertPem = _prefs.getString("mqtt_ccrt", config.cloud.mqttClientCertPem);
+  config.cloud.mqttClientKeyPem = _prefs.getString("mqtt_ckey", config.cloud.mqttClientKeyPem);
   config.cloud.httpFallbackEnabled = _prefs.getBool("http_fb", config.cloud.httpFallbackEnabled);
 
   config.rs485.pzemEnabled = _prefs.getBool("pzem_en", config.rs485.pzemEnabled);
@@ -109,6 +114,11 @@ bool PreferencesStore::save(const DeviceConfig& config) {
   _prefs.putString("mqtt_topic", config.cloud.mqttTelemetryTopic);
   _prefs.putString("mqtt_cmd_t", config.cloud.mqttCmdTopic);
   _prefs.putString("mqtt_st_t", config.cloud.mqttStatusTopic);
+  _prefs.putBool("mqtt_mtls", config.cloud.mqttMtlsEnabled);
+  _prefs.putString("mqtt_sni", config.cloud.mqttTlsHostname);
+  _prefs.putString("mqtt_ca", config.cloud.mqttCaCertPem);
+  _prefs.putString("mqtt_ccrt", config.cloud.mqttClientCertPem);
+  _prefs.putString("mqtt_ckey", config.cloud.mqttClientKeyPem);
   _prefs.putBool("http_fb", config.cloud.httpFallbackEnabled);
 
   _prefs.putBool("pzem_en", config.rs485.pzemEnabled);
