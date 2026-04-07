@@ -1220,6 +1220,13 @@ String WebUI::settingsHtml() const {
   html += ">Use HTTP when MQTT publish fails</label></div>";
   html += "</div></div>";
 
+  html += "<div class='section-title'>Import Device Secrets</div><div class='card card-compact'>";
+  html += "<p class='tip'>Paste the generated device_secrets.h text, then click Import. Review values and click Save Configuration.</p>";
+  html += "<div class='field'><label>device_secrets.h content</label><textarea id='device-secrets-input' rows='8' placeholder='#define MQTT_USERNAME \"...\"'></textarea></div>";
+  html += "<div class='actions'><button class='btn btn-secondary' type='button' onclick='importDeviceSecrets()'>Import From Text</button>";
+  html += "<span id='device-secrets-status' class='tip' style='margin-left:10px'>No import yet.</span></div>";
+  html += "</div>";
+
   html += "<div class='section-title'>RS485 Network</div><div class='card'><div class='form-grid'>";
   html += "<div class='field'><label>RS485 Baud</label><input name='rs485_baud' type='number' min='1200' value='" + String(_config.rs485.baudRate) + "'></div>";
   html += "</div><p class='tip'>Shared bus settings used by PZEM, generator modules and rectifier battery modules.</p></div>";
@@ -1379,6 +1386,63 @@ async function captureFuelRaw(level) {
       }
     }
   } catch (_) {}
+}
+
+function setInputValueByName(name, value) {
+  if (!value) return false;
+  const el = document.querySelector(`input[name='${name}']`);
+  if (!el) return false;
+  el.value = value;
+  return true;
+}
+
+function parseDeviceSecretsDefines(text) {
+  const defs = {};
+  const pattern = /#define\s+([A-Za-z0-9_]+)\s+"([^"]*)"/g;
+  let m;
+  while ((m = pattern.exec(text)) !== null) {
+    defs[m[1]] = m[2];
+  }
+  return defs;
+}
+
+function importDeviceSecrets() {
+  const input = document.getElementById('device-secrets-input');
+  const status = document.getElementById('device-secrets-status');
+  if (!input) return;
+  const defs = parseDeviceSecretsDefines(input.value || '');
+  let applied = 0;
+
+  const mappings = [
+    ['DEVICE_SITE_ID', 'site_id'],
+    ['MQTT_CLIENT_ID', 'mqtt_client_id'],
+    ['MQTT_USERNAME', 'mqtt_user'],
+    ['MQTT_PASSWORD', 'mqtt_pass'],
+    ['MQTT_TOPIC', 'mqtt_topic'],
+    ['MQTT_CMD_TOPIC', 'mqtt_cmd_topic'],
+    ['MQTT_STATUS_TOPIC', 'mqtt_status_topic']
+  ];
+
+  for (const [fromKey, toInput] of mappings) {
+    if (Object.prototype.hasOwnProperty.call(defs, fromKey)) {
+      if (setInputValueByName(toInput, defs[fromKey])) {
+        applied += 1;
+      }
+    }
+  }
+
+  const mqttEnable = document.querySelector("input[name='mqtt_en']");
+  if (mqttEnable && applied > 0) {
+    mqttEnable.checked = true;
+  }
+
+  if (status) {
+    if (applied > 0) {
+      status.textContent = `Imported ${applied} field(s). Click Save Configuration.`;
+    } else {
+      status.textContent = 'No supported #define entries found.';
+    }
+  }
 }
 </script>
 </div></body></html>)HTML";
