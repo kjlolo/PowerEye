@@ -2,8 +2,12 @@
 #include "AppConfig.h"
 #include "Pins.h"
 #include "BuildInfo.h"
+#include "comms/ota_signing_pub.h"
 #include <Arduino.h>
 #include <ArduinoJson.h>
+#include "mbedtls/base64.h"
+#include "mbedtls/error.h"
+#include "mbedtls/pk.h"
 
 namespace {
   HardwareSerial& MODEM_SERIAL = Serial2;
@@ -114,6 +118,92 @@ namespace {
            g.overSpeedShutdown ||
            g.lowOilPressureShutdown ||
            g.highEngineTemperatureShutdown;
+  }
+
+  String urlEncode(const String& value) {
+    String out;
+    out.reserve(value.length() * 3);
+    const char* hex = "0123456789ABCDEF";
+    for (size_t i = 0; i < value.length(); ++i) {
+      const uint8_t c = static_cast<uint8_t>(value.charAt(i));
+      const bool safe = (c >= 'a' && c <= 'z') ||
+                        (c >= 'A' && c <= 'Z') ||
+                        (c >= '0' && c <= '9') ||
+                        c == '-' || c == '_' || c == '.' || c == '~';
+      if (safe) {
+        out += static_cast<char>(c);
+      } else {
+        out += '%';
+        out += hex[(c >> 4) & 0x0F];
+        out += hex[c & 0x0F];
+      }
+    }
+    return out;
+  }
+
+  String toLowerHex(const uint8_t* bytes, size_t len) {
+    const char* hex = "0123456789abcdef";
+    String out;
+    out.reserve(len * 2);
+    for (size_t i = 0; i < len; ++i) {
+      out += hex[(bytes[i] >> 4) & 0x0F];
+      out += hex[bytes[i] & 0x0F];
+    }
+    return out;
+  }
+
+  bool verifyOtaSignature(const uint8_t sha256[32], const String& signatureB64, String& errorOut) {
+    errorOut = "";
+    if (signatureB64.isEmpty()) {
+      errorOut = "signature_empty";
+      return false;
+    }
+
+    uint8_t signature[256];
+    size_t signatureLen = 0;
+    const int decodeRet = mbedtls_base64_decode(
+      signature,
+      sizeof(signature),
+      &signatureLen,
+      reinterpret_cast<const unsigned char*>(signatureB64.c_str()),
+      signatureB64.length()
+    );
+    if (decodeRet != 0 || signatureLen == 0) {
+      errorOut = "signature_decode_failed";
+      return false;
+    }
+
+    mbedtls_pk_context pk;
+    mbedtls_pk_init(&pk);
+    const int parseRet = mbedtls_pk_parse_public_key(
+      &pk,
+      reinterpret_cast<const unsigned char*>(OTA_SIGNING_PUB_KEY),
+      strlen(OTA_SIGNING_PUB_KEY) + 1
+    );
+    if (parseRet != 0) {
+      char errbuf[96] = {0};
+      mbedtls_strerror(parseRet, errbuf, sizeof(errbuf));
+      errorOut = String("pubkey_parse_failed:") + String(errbuf);
+      mbedtls_pk_free(&pk);
+      return false;
+    }
+
+    const int verifyRet = mbedtls_pk_verify(
+      &pk,
+      MBEDTLS_MD_SHA256,
+      sha256,
+      32,
+      signature,
+      signatureLen
+    );
+    mbedtls_pk_free(&pk);
+    if (verifyRet != 0) {
+      char errbuf[96] = {0};
+      mbedtls_strerror(verifyRet, errbuf, sizeof(errbuf));
+      errorOut = String("signature_invalid:") + String(errbuf);
+      return false;
+    }
+    return true;
   }
 
 }
@@ -488,10 +578,7 @@ void SiteController::handleMqttControl() {
     handleMqttCommand(topic, payload);
   }
 
-  if (_pendingOtaCheck) {
-    _pendingOtaCheck = false;
-    Serial.println("[MQTT] ota_check requested. Remote OTA pull is not wired yet.");
-  }
+  runPendingOtaCheck();
 }
 
 void SiteController::handleMqttCommand(const String& topic, const String& payload) {
@@ -542,4 +629,81 @@ void SiteController::handleMqttCommand(const String& topic, const String& payloa
       Serial.printf("[MQTT] sync_now publish failed for request_id=%s\n", requestId.c_str());
     }
   }
+}
+
+void SiteController::runPendingOtaCheck() {
+  if (!_pendingOtaCheck) {
+    return;
+  }
+  _pendingOtaCheck = false;
+
+  if (_config.cloud.baseUrl.isEmpty()) {
+    Serial.println("[OTA] base_url missing; ota_check ignored");
+    return;
+  }
+  if (_config.identity.siteId.isEmpty()) {
+    Serial.println("[OTA] site_id missing; ota_check ignored");
+    return;
+  }
+
+  const String manifestPath = "/api/ota?site_id=" + urlEncode(_config.identity.siteId) +
+                              "&fw=" + urlEncode(_snapshot.fwVersion);
+  int manifestCode = 0;
+  String manifestBody;
+  if (!_http.getText(_config.cloud.baseUrl, manifestPath, _config.cloud.authToken, manifestCode, manifestBody)) {
+    Serial.printf("[OTA] manifest fetch failed code=%d modem_error=%s\n", manifestCode, _modem.lastError().c_str());
+    return;
+  }
+
+  JsonDocument manifestDoc;
+  if (deserializeJson(manifestDoc, manifestBody) != DeserializationError::Ok) {
+    Serial.println("[OTA] manifest JSON parse failed");
+    return;
+  }
+
+  const String otaUrl = manifestDoc["url"] | "";
+  const String expectedSha = manifestDoc["sha256"] | "";
+  const String signatureB64 = manifestDoc["signature"] | "";
+  if (otaUrl.isEmpty()) {
+    Serial.println("[OTA] no pending update");
+    return;
+  }
+  if (expectedSha.isEmpty() || signatureB64.isEmpty()) {
+    Serial.println("[OTA] manifest missing sha256/signature; update rejected");
+    return;
+  }
+
+  size_t hashBytes = 0;
+  uint8_t computedSha[32] = {0};
+  if (!_http.computeSha256(otaUrl, "", hashBytes, computedSha)) {
+    Serial.printf("[OTA] hash pass failed modem_error=%s\n", _modem.lastError().c_str());
+    return;
+  }
+  const String computedShaHex = toLowerHex(computedSha, sizeof(computedSha));
+  String expectedShaNorm = expectedSha;
+  expectedShaNorm.trim();
+  expectedShaNorm.toLowerCase();
+  if (computedShaHex != expectedShaNorm) {
+    Serial.printf("[OTA] sha mismatch expected=%s computed=%s bytes=%u\n",
+                  expectedShaNorm.c_str(),
+                  computedShaHex.c_str(),
+                  static_cast<unsigned>(hashBytes));
+    return;
+  }
+
+  String sigError;
+  if (!verifyOtaSignature(computedSha, signatureB64, sigError)) {
+    Serial.printf("[OTA] signature verify failed: %s\n", sigError.c_str());
+    return;
+  }
+
+  size_t written = 0;
+  if (!_http.downloadToUpdate(otaUrl, "", written)) {
+    Serial.printf("[OTA] download/apply failed modem_error=%s\n", _modem.lastError().c_str());
+    return;
+  }
+
+  Serial.printf("[OTA] secure update applied (%u bytes). Rebooting.\n", static_cast<unsigned>(written));
+  delay(500);
+  ESP.restart();
 }

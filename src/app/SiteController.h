@@ -29,6 +29,7 @@ private:
   void handlePublishing();
   void handleMqttControl();
   void handleMqttCommand(const String& topic, const String& payload);
+  void runPendingOtaCheck();
 
   DeviceConfig _config;
   PreferencesStore _prefs;

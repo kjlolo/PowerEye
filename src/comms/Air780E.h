@@ -10,6 +10,10 @@ public:
   String phoneNumber();
   String diagnosticsJson();
   bool postJson(const String& baseUrl, const String& path, const String& bearerToken, const String& payload, int& httpCode, String& responseBody);
+  bool getText(const String& baseUrl, const String& path, const String& bearerToken, int& httpCode, String& responseBody);
+  bool getTextUrl(const String& url, const String& bearerToken, int& httpCode, String& responseBody);
+  bool httpComputeSha256(const String& url, const String& bearerToken, size_t& bytesRead, uint8_t outSha256[32]);
+  bool httpDownloadToUpdate(const String& url, const String& bearerToken, size_t& bytesWritten);
   bool mqttPublish(const String& host,
                    uint16_t port,
                    bool useTls,
@@ -48,6 +52,10 @@ private:
   bool sendCommandAny(const String& command, const char* expect1, const char* expect2, uint32_t timeoutMs, String* out = nullptr);
   bool extractHttpAction(const String& line, int& method, int& code, int& len) const;
   String normalizeUrl(const String& baseUrl, const String& path) const;
+  bool httpBegin(const String& url, const String& bearerToken, bool setJsonContentType);
+  bool httpAction(uint8_t method, int& httpCode, int& bodyLen);
+  bool httpReadBinaryChunk(int offset, int requestLen, uint8_t* outBuf, int& outLen);
+  bool httpEnd();
   bool ensureMqttConnected(const String& host,
                            uint16_t port,
                            bool useTls,

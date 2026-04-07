@@ -1,4 +1,6 @@
 #include "comms/Air780E.h"
+#include <Update.h>
+#include "mbedtls/sha256.h"
 
 namespace {
 String jsonEscape(const String& in) {
@@ -135,6 +137,27 @@ bool parseMqttUrcLine(const String& rawLine, String& topic, String& payload) {
     payload = line.substring(jsonStart, jsonEnd + 1);
     payload.trim();
     return payload.length() > 0;
+  }
+  return false;
+}
+
+bool parseHttpReadLength(const String& response, int& len) {
+  const int idx = response.lastIndexOf("+HTTPREAD:");
+  if (idx < 0) return false;
+  String line = response.substring(idx);
+  const int eol = line.indexOf('\n');
+  if (eol > 0) line = line.substring(0, eol);
+  line.replace("\r", "");
+  line.trim();
+  const int comma = line.lastIndexOf(',');
+  if (comma >= 0) {
+    len = line.substring(comma + 1).toInt();
+    return len >= 0;
+  }
+  const int colon = line.indexOf(':');
+  if (colon >= 0) {
+    len = line.substring(colon + 1).toInt();
+    return len >= 0;
   }
   return false;
 }
@@ -544,6 +567,174 @@ bool Air780E::postJson(const String& baseUrl, const String& path, const String& 
   return true;
 }
 
+bool Air780E::getText(const String& baseUrl, const String& path, const String& bearerToken, int& httpCode, String& responseBody) {
+  const String url = normalizeUrl(baseUrl, path);
+  return getTextUrl(url, bearerToken, httpCode, responseBody);
+}
+
+bool Air780E::getTextUrl(const String& url, const String& bearerToken, int& httpCode, String& responseBody) {
+  httpCode = 0;
+  responseBody = "";
+  _lastError = "";
+
+  if (!httpBegin(url, bearerToken, false)) {
+    return false;
+  }
+
+  int bodyLen = 0;
+  if (!httpAction(0, httpCode, bodyLen)) {
+    httpEnd();
+    return false;
+  }
+  if (httpCode < 200 || httpCode >= 300) {
+    _lastError = "http_status_" + String(httpCode);
+    httpEnd();
+    return false;
+  }
+
+  String out;
+  if (bodyLen > 0) {
+    if (!sendCommand("AT+HTTPREAD", "OK", 20000, &out)) {
+      _lastError = "httpread_failed";
+      httpEnd();
+      return false;
+    }
+    const int payloadStart = out.indexOf("\n");
+    if (payloadStart >= 0) {
+      responseBody = out.substring(payloadStart + 1);
+      responseBody.trim();
+      const int okPos = responseBody.lastIndexOf("OK");
+      if (okPos > 0) {
+        responseBody = responseBody.substring(0, okPos);
+        responseBody.trim();
+      }
+    }
+  }
+  httpEnd();
+  return true;
+}
+
+bool Air780E::httpComputeSha256(const String& url, const String& bearerToken, size_t& bytesRead, uint8_t outSha256[32]) {
+  bytesRead = 0;
+  _lastError = "";
+  if (outSha256 == nullptr) {
+    _lastError = "sha_out_null";
+    return false;
+  }
+  if (!httpBegin(url, bearerToken, false)) {
+    return false;
+  }
+
+  int httpCode = 0;
+  int bodyLen = 0;
+  if (!httpAction(0, httpCode, bodyLen)) {
+    httpEnd();
+    return false;
+  }
+  if (httpCode < 200 || httpCode >= 300) {
+    _lastError = "http_status_" + String(httpCode);
+    httpEnd();
+    return false;
+  }
+  if (bodyLen <= 0) {
+    _lastError = "http_empty_body";
+    httpEnd();
+    return false;
+  }
+
+  mbedtls_sha256_context shaCtx;
+  mbedtls_sha256_init(&shaCtx);
+  mbedtls_sha256_starts(&shaCtx, 0);
+
+  uint8_t chunk[1024];
+  int offset = 0;
+  while (offset < bodyLen) {
+    int outLen = 0;
+    const int reqLen = (bodyLen - offset) > static_cast<int>(sizeof(chunk))
+      ? static_cast<int>(sizeof(chunk))
+      : (bodyLen - offset);
+    if (!httpReadBinaryChunk(offset, reqLen, chunk, outLen) || outLen <= 0) {
+      mbedtls_sha256_free(&shaCtx);
+      httpEnd();
+      _lastError = "http_chunk_read_failed";
+      return false;
+    }
+    mbedtls_sha256_update(&shaCtx, chunk, outLen);
+    offset += outLen;
+    bytesRead += static_cast<size_t>(outLen);
+  }
+
+  mbedtls_sha256_finish(&shaCtx, outSha256);
+  mbedtls_sha256_free(&shaCtx);
+  httpEnd();
+  return true;
+}
+
+bool Air780E::httpDownloadToUpdate(const String& url, const String& bearerToken, size_t& bytesWritten) {
+  bytesWritten = 0;
+  _lastError = "";
+  if (!httpBegin(url, bearerToken, false)) {
+    return false;
+  }
+
+  int httpCode = 0;
+  int bodyLen = 0;
+  if (!httpAction(0, httpCode, bodyLen)) {
+    httpEnd();
+    return false;
+  }
+  if (httpCode < 200 || httpCode >= 300) {
+    _lastError = "http_status_" + String(httpCode);
+    httpEnd();
+    return false;
+  }
+  if (bodyLen <= 0) {
+    _lastError = "http_empty_body";
+    httpEnd();
+    return false;
+  }
+
+  if (!Update.begin(static_cast<size_t>(bodyLen))) {
+    _lastError = "ota_begin_failed_" + String(Update.getError());
+    httpEnd();
+    return false;
+  }
+
+  uint8_t chunk[1024];
+  int offset = 0;
+  while (offset < bodyLen) {
+    int outLen = 0;
+    const int reqLen = (bodyLen - offset) > static_cast<int>(sizeof(chunk))
+      ? static_cast<int>(sizeof(chunk))
+      : (bodyLen - offset);
+    if (!httpReadBinaryChunk(offset, reqLen, chunk, outLen) || outLen <= 0) {
+      Update.abort();
+      httpEnd();
+      _lastError = "ota_chunk_read_failed";
+      return false;
+    }
+    const size_t wrote = Update.write(chunk, static_cast<size_t>(outLen));
+    if (wrote != static_cast<size_t>(outLen)) {
+      _lastError = "ota_write_failed_" + String(Update.getError());
+      Update.abort();
+      httpEnd();
+      return false;
+    }
+    offset += outLen;
+    bytesWritten += static_cast<size_t>(outLen);
+  }
+
+  if (!Update.end(true)) {
+    _lastError = "ota_finalize_failed_" + String(Update.getError());
+    Update.abort();
+    httpEnd();
+    return false;
+  }
+
+  httpEnd();
+  return true;
+}
+
 bool Air780E::mqttPublish(const String& host,
                           uint16_t port,
                           bool useTls,
@@ -942,6 +1133,153 @@ bool Air780E::extractHttpAction(const String& line, int& method, int& code, int&
   return true;
 }
 
+bool Air780E::httpBegin(const String& url, const String& bearerToken, bool setJsonContentType) {
+  _lastError = "";
+  if (!isNetworkReady()) {
+    return false;
+  }
+  const bool isHttps = url.startsWith("https://");
+  {
+    const String prevError = _lastError;
+    sendCommand("AT+HTTPTERM", "OK", 1500);
+    _lastError = prevError;
+  }
+  if (!sendCommand("AT+HTTPINIT", "OK", 3000)) {
+    _lastError = "httpinit_failed";
+    return false;
+  }
+  if (!sendCommand("AT+HTTPPARA=\"CID\",1", "OK", 2000)) {
+    _lastError = "http_cid_failed";
+    httpEnd();
+    return false;
+  }
+  if (!sendCommand("AT+HTTPPARA=\"URL\",\"" + url + "\"", "OK", 4000)) {
+    _lastError = "http_url_failed";
+    httpEnd();
+    return false;
+  }
+  if (!sendCommand(String("AT+HTTPSSL=") + (isHttps ? "1" : "0"), "OK", 3000)) {
+    _lastError = "http_ssl_cfg_failed";
+    httpEnd();
+    return false;
+  }
+  if (!bearerToken.isEmpty()) {
+    const String authHeader = "Authorization: Bearer " + bearerToken;
+    if (!sendCommand("AT+HTTPPARA=\"USERDATA\",\"" + authHeader + "\"", "OK", 3000)) {
+      _lastError = "http_auth_failed";
+      httpEnd();
+      return false;
+    }
+  }
+  if (setJsonContentType) {
+    if (!sendCommand("AT+HTTPPARA=\"CONTENT\",\"application/json\"", "OK", 2000)) {
+      _lastError = "http_content_type_failed";
+      httpEnd();
+      return false;
+    }
+  }
+  return true;
+}
+
+bool Air780E::httpAction(uint8_t method, int& httpCode, int& bodyLen) {
+  httpCode = 0;
+  bodyLen = 0;
+  String out;
+  if (!sendCommand("AT+HTTPACTION=" + String(method), "+HTTPACTION:", 35000, &out)) {
+    _lastError = "httpaction_failed";
+    return false;
+  }
+
+  int parsedMethod = 0;
+  const unsigned long parseStart = millis();
+  while (!extractHttpAction(out, parsedMethod, httpCode, bodyLen) && (millis() - parseStart) < 3000) {
+    while (_serial.available() > 0) {
+      out += static_cast<char>(_serial.read());
+    }
+    delay(10);
+  }
+  if (!extractHttpAction(out, parsedMethod, httpCode, bodyLen)) {
+    _lastError = "httpaction_parse_failed";
+    return false;
+  }
+  return true;
+}
+
+bool Air780E::httpReadBinaryChunk(int offset, int requestLen, uint8_t* outBuf, int& outLen) {
+  outLen = 0;
+  if (requestLen <= 0 || outBuf == nullptr) {
+    _lastError = "httpread_bad_args";
+    return false;
+  }
+
+  clearRx();
+  _serial.print("AT+HTTPREAD=" + String(offset) + "," + String(requestLen));
+  _serial.print("\r\n");
+
+  String out;
+  bool seenHeader = false;
+  const unsigned long hdrStart = millis();
+  while ((millis() - hdrStart) < 15000) {
+    while (_serial.available() > 0) {
+      const char c = static_cast<char>(_serial.read());
+      out += c;
+      if (!seenHeader && out.indexOf("+HTTPREAD:") >= 0) {
+        seenHeader = true;
+      }
+      if (seenHeader && c == '\n') {
+        break;
+      }
+    }
+    if (seenHeader && out.endsWith("\n")) {
+      break;
+    }
+    delay(1);
+  }
+  if (!seenHeader) {
+    _lastError = "httpread_start_failed";
+    return false;
+  }
+  int dataLen = 0;
+  if (!parseHttpReadLength(out, dataLen)) {
+    _lastError = "httpread_len_parse_failed";
+    return false;
+  }
+  if (dataLen <= 0 || dataLen > requestLen) {
+    _lastError = "httpread_len_invalid_" + String(dataLen);
+    return false;
+  }
+
+  size_t readTotal = 0;
+  const unsigned long start = millis();
+  while (readTotal < static_cast<size_t>(dataLen) && (millis() - start) < 20000) {
+    if (_serial.available() > 0) {
+      outBuf[readTotal++] = static_cast<uint8_t>(_serial.read());
+    } else {
+      delay(1);
+    }
+  }
+  if (readTotal != static_cast<size_t>(dataLen)) {
+    _lastError = "httpread_data_timeout";
+    return false;
+  }
+  outLen = dataLen;
+
+  // Consume trailing CRLF + OK line.
+  String tail;
+  if (!sendCommand("", "OK", 6000, &tail)) {
+    _lastError = "httpread_tail_failed";
+    return false;
+  }
+  return true;
+}
+
+bool Air780E::httpEnd() {
+  const String prevError = _lastError;
+  const bool ok = sendCommand("AT+HTTPTERM", "OK", 3000);
+  _lastError = prevError;
+  return ok;
+}
+
 String Air780E::normalizeUrl(const String& baseUrl, const String& path) const {
   String url = baseUrl;
   url.trim();
@@ -958,6 +1296,10 @@ String Air780E::normalizeUrl(const String& baseUrl, const String& path) const {
 
 void Air780E::clearRx() {
   while (_serial.available() > 0) {
-    _serial.read();
+    const char c = static_cast<char>(_serial.read());
+    _mqttRxBuffer += c;
+    if (_mqttRxBuffer.length() > 4096) {
+      _mqttRxBuffer.remove(0, _mqttRxBuffer.length() - 2048);
+    }
   }
 }
