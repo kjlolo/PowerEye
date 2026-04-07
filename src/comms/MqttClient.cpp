@@ -1,6 +1,16 @@
 #include "comms/MqttClient.h"
+#include "comms/mqtt_root_ca.h"
 
 MqttClient::MqttClient(Air780E& modem) : _modem(modem) {}
+
+namespace {
+String effectiveCaPem(const CloudConfig& cloud) {
+  if (!cloud.mqttCaCertPem.isEmpty()) {
+    return cloud.mqttCaCertPem;
+  }
+  return String(MQTT_ROOT_CA);
+}
+}
 
 String MqttClient::resolveClientId(const CloudConfig& cloud) const {
   String clientId = cloud.mqttClientId;
@@ -21,7 +31,7 @@ bool MqttClient::ensureControlChannel(const CloudConfig& cloud) {
       cloud.mqttPassword,
       cloud.mqttMtlsEnabled,
       cloud.mqttTlsHostname,
-      cloud.mqttCaCertPem,
+      effectiveCaPem(cloud),
       cloud.mqttClientCertPem,
       cloud.mqttClientKeyPem)) {
     _controlReady = false;
@@ -59,7 +69,7 @@ bool MqttClient::publish(const CloudConfig& cloud, const String& payload) {
     payload,
     cloud.mqttMtlsEnabled,
     cloud.mqttTlsHostname,
-    cloud.mqttCaCertPem,
+    effectiveCaPem(cloud),
     cloud.mqttClientCertPem,
     cloud.mqttClientKeyPem
   );
