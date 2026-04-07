@@ -199,11 +199,21 @@ String uiHead(const char* title) {
 body{
   margin:0;
   font-family:Segoe UI,Helvetica,Arial,sans-serif;
-  background:
-    radial-gradient(circle at 12% 10%, rgba(255,212,71,.18), transparent 40%),
-    radial-gradient(circle at 88% 6%, rgba(255,212,71,.08), transparent 36%),
-    linear-gradient(180deg, var(--bg-soft), var(--bg));
+  background:var(--bg);
   color:var(--text);
+  min-height:100vh;
+  position:relative;
+  overflow-x:hidden;
+}
+body::before{
+  content:"";
+  position:fixed;
+  inset:0;
+  z-index:-1;
+  background:
+    radial-gradient(1200px 520px at 10% 0%, rgba(255,212,71,.15), transparent 55%),
+    radial-gradient(1000px 460px at 92% 4%, rgba(255,212,71,.08), transparent 52%),
+    linear-gradient(180deg, #10254a 0%, #07152f 55%, #06122a 100%);
 }
 .wrap{max-width:1100px;margin:0 auto;padding:18px 14px 40px}
 .top{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:14px}
@@ -347,9 +357,11 @@ body.show-advanced .advanced-only-grid{display:block}
 .wizard-step h4{margin:0 0 6px;font-size:13px;color:var(--accent)}
 .wizard-step p{margin:0;color:var(--muted);font-size:12px}
 .sticky-actions{
-  position:sticky;bottom:0;z-index:20;margin-top:16px;padding:10px 0;
-  background:linear-gradient(180deg, rgba(7,21,47,0), rgba(7,21,47,.95) 35%, rgba(7,21,47,.98));
-  border-top:1px solid rgba(42,63,102,.6)
+  position:sticky;bottom:0;z-index:20;margin-top:16px;padding:10px 12px;
+  background:rgba(8,20,45,.82);
+  border:1px solid rgba(42,63,102,.65);
+  border-radius:12px;
+  backdrop-filter:blur(6px)
 }
 .inline-error{margin-top:8px;padding:8px 10px;border:1px solid rgba(242,110,125,.6);background:rgba(242,110,125,.14);border-radius:10px;color:#ffd8dd;font-size:12px;display:none}
 .audit-list{margin:8px 0 0;padding-left:18px;color:var(--muted);font-size:12px}
