@@ -167,7 +167,11 @@ void SiteController::update() {
     if (_config.cloud.baseUrl.isEmpty() || _config.cloud.telemetryPath.isEmpty()) {
       reason = "missing_cloud_config";
     } else {
-      const String payload = _telemetryBuilder.buildJson(_snapshot, _config.cloud.completePayload);
+      const String payload = _telemetryBuilder.buildJson(
+        _snapshot,
+        _config.cloud.completePayload,
+        _config.cloud.mcbeamCompatPayload
+      );
       ok = _http.postJson(_config.cloud.baseUrl, _config.cloud.telemetryPath, _config.cloud.authToken, payload, httpCode, responseBody);
       reason = ok ? "success" : "post_failed";
     }
@@ -399,7 +403,11 @@ void SiteController::handlePublishing() {
 
   if (now - _lastReport >= _config.cloud.reportIntervalMs) {
     _lastReport = now;
-    const String payload = _telemetryBuilder.buildJson(_snapshot, _config.cloud.completePayload);
+    const String payload = _telemetryBuilder.buildJson(
+      _snapshot,
+      _config.cloud.completePayload,
+      _config.cloud.mcbeamCompatPayload
+    );
     _publishManager.enqueue(payload);
     Serial.println("[QUEUE] telemetry enqueued");
   }

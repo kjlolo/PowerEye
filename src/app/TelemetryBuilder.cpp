@@ -1,7 +1,53 @@
 #include "app/TelemetryBuilder.h"
 #include <ArduinoJson.h>
 
-String TelemetryBuilder::buildJson(const TelemetrySnapshot& snapshot, bool completePayload) const {
+namespace {
+uint8_t effectiveGensetCount(const TelemetrySnapshot& snapshot) {
+  return snapshot.gensetCountConfigured > Rs485Config::MAX_GENERATORS
+    ? Rs485Config::MAX_GENERATORS
+    : snapshot.gensetCountConfigured;
+}
+
+uint8_t effectiveBatteryCount(const TelemetrySnapshot& snapshot) {
+  return snapshot.batteryBankCountConfigured > Rs485Config::MAX_BATTERY_BANKS
+    ? Rs485Config::MAX_BATTERY_BANKS
+    : snapshot.batteryBankCountConfigured;
+}
+
+bool isGensetRunning(const GensetData& g) {
+  if (!g.online) return false;
+  if (g.activePowerKw > 0.2f || g.speedRpm > 200.0f) return true;
+  if (g.generatorLoad || g.generatorState != 0) return true;
+  return false;
+}
+
+int firstConfiguredOrOnlineGenset(const TelemetrySnapshot& snapshot, uint8_t gensetCount) {
+  int firstConfigured = -1;
+  for (uint8_t i = 0; i < gensetCount; ++i) {
+    if (snapshot.gensetModels[i] == GeneratorModel::NONE) {
+      continue;
+    }
+    if (firstConfigured < 0) {
+      firstConfigured = i;
+    }
+    if (snapshot.gensets[i].online) {
+      return i;
+    }
+  }
+  return firstConfigured;
+}
+
+int firstDischargingBattery(const TelemetrySnapshot& snapshot, uint8_t batteryCount) {
+  for (uint8_t i = 0; i < batteryCount; ++i) {
+    const BatteryData& b = snapshot.batteryBanks[i];
+    if (b.online && b.packCurrent < -0.2f) {
+      return i;
+    }
+  }
+  return -1;
+}
+
+String buildPowerEyePayload(const TelemetrySnapshot& snapshot, bool completePayload) {
   JsonDocument doc;
   doc["device_id"] = snapshot.deviceId;
   doc["fw_version"] = snapshot.fwVersion;
@@ -23,12 +69,8 @@ String TelemetryBuilder::buildJson(const TelemetrySnapshot& snapshot, bool compl
   doc["fuel_sensor_status"] = snapshot.fuel.online ? "online" : "offline";
 
   const bool gridAvailable = snapshot.energy.online && snapshot.energy.voltage > 150.0f;
-  const uint8_t gensetCount = snapshot.gensetCountConfigured > Rs485Config::MAX_GENERATORS
-    ? Rs485Config::MAX_GENERATORS
-    : snapshot.gensetCountConfigured;
-  const uint8_t batteryCount = snapshot.batteryBankCountConfigured > Rs485Config::MAX_BATTERY_BANKS
-    ? Rs485Config::MAX_BATTERY_BANKS
-    : snapshot.batteryBankCountConfigured;
+  const uint8_t gensetCount = effectiveGensetCount(snapshot);
+  const uint8_t batteryCount = effectiveBatteryCount(snapshot);
   doc["genset_count_configured"] = gensetCount;
   doc["battery_bank_count_configured"] = batteryCount;
 
@@ -39,7 +81,7 @@ String TelemetryBuilder::buildJson(const TelemetrySnapshot& snapshot, bool compl
     const GensetData& g = snapshot.gensets[i];
     if (g.online) {
       ++gensetOnlineCount;
-      if (g.activePowerKw > 0.2f || g.speedRpm > 200.0f) {
+      if (isGensetRunning(g)) {
         gensetAvailable = true;
       }
     }
@@ -224,4 +266,200 @@ String TelemetryBuilder::buildJson(const TelemetrySnapshot& snapshot, bool compl
   String out;
   serializeJson(doc, out);
   return out;
+}
+
+String buildMcbeamPayload(const TelemetrySnapshot& snapshot) {
+  JsonDocument doc;
+  const uint8_t gensetCount = effectiveGensetCount(snapshot);
+  const uint8_t batteryCount = effectiveBatteryCount(snapshot);
+  const bool gridAvailable = snapshot.energy.online && snapshot.energy.voltage > 150.0f;
+
+  bool gensetAvailable = false;
+  for (uint8_t i = 0; i < gensetCount; ++i) {
+    if (isGensetRunning(snapshot.gensets[i])) {
+      gensetAvailable = true;
+      break;
+    }
+  }
+
+  const int dischargingBatteryIdx = firstDischargingBattery(snapshot, batteryCount);
+  const bool batteryDischarging = dischargingBatteryIdx >= 0;
+
+  int loadSource = 0;  // commercial
+  const char* pzemSource = "commercial";
+  if (gridAvailable) {
+    loadSource = 0;
+    pzemSource = "commercial";
+  } else if (gensetAvailable) {
+    loadSource = 2;
+    pzemSource = "generator";
+  } else if (batteryDischarging) {
+    loadSource = 1;
+    pzemSource = "unknown";
+  } else {
+    loadSource = 0;
+    pzemSource = "unknown";
+  }
+
+  float activeVoltage = 0.0f;
+  float activeCurrent = 0.0f;
+  float activePower = 0.0f;
+  float activeFrequency = 0.0f;
+  float activePowerFactor = 0.0f;
+
+  if (loadSource == 0 || loadSource == 2) {
+    activeVoltage = snapshot.energy.voltage;
+    activeCurrent = snapshot.energy.current;
+    activePower = snapshot.energy.power;
+    activeFrequency = snapshot.energy.frequency;
+    activePowerFactor = snapshot.energy.powerFactor;
+  } else if (loadSource == 1) {
+    const BatteryData& b = snapshot.batteryBanks[dischargingBatteryIdx];
+    activeVoltage = b.packVoltage;
+    activeCurrent = b.packCurrent;
+    activePower = b.packVoltage * (b.packCurrent < 0 ? -b.packCurrent : b.packCurrent);
+    activeFrequency = 0.0f;
+    activePowerFactor = 0.0f;
+  }
+
+  const int primaryGensetIdx = firstConfiguredOrOnlineGenset(snapshot, gensetCount);
+  const GensetData* primaryGenset = primaryGensetIdx >= 0 ? &snapshot.gensets[primaryGensetIdx] : nullptr;
+  const GeneratorModel primaryGensetModel = primaryGensetIdx >= 0
+    ? snapshot.gensetModels[primaryGensetIdx]
+    : GeneratorModel::NONE;
+
+  const char* gensetType = "UNKNOWN";
+  if (primaryGensetModel == GeneratorModel::HGM6100NC) {
+    gensetType = "HGM6100NC";
+  }
+
+  const char* gensetMode = "UNKNOWN";
+  const char* gensetStatus = "STOPPED";
+  bool gensetOnLoad = false;
+  bool gensetOk = false;
+  float gensetVoltage = 0.0f;
+  float gensetCurrent = 0.0f;
+  float gensetPower = 0.0f;
+  float gensetFrequency = 0.0f;
+  float gensetPowerFactor = 0.0f;
+  float gensetBatteryVoltage = 0.0f;
+  float gensetFuelPercent = -1.0f;
+  uint32_t gensetHours = 0;
+  uint32_t gensetEnergy = 0;
+
+  if (primaryGenset != nullptr) {
+    const GensetData& g = *primaryGenset;
+    if (g.autoMode) gensetMode = "AUTO";
+    else if (g.manualMode) gensetMode = "MANUAL";
+    else if (g.stopMode) gensetMode = "STOP";
+
+    gensetStatus = isGensetRunning(g) ? "RUNNING" : "STOPPED";
+    gensetOnLoad = g.generatorLoad;
+    gensetOk = g.online;
+    gensetVoltage = g.voltageA;
+    gensetCurrent = g.currentA;
+    gensetPower = g.activePowerKw;
+    gensetFrequency = g.frequency;
+    gensetPowerFactor = g.powerFactor;
+    gensetBatteryVoltage = g.batteryVoltage;
+    gensetFuelPercent = g.fuelLevelPercent;
+    gensetHours = g.runHours;
+    gensetEnergy = g.totalEnergy;
+  }
+
+  float fuelTankCapacity = 0.0f;
+  if (snapshot.fuel.online && snapshot.fuel.percent > 0.01f) {
+    fuelTankCapacity = snapshot.fuel.liters * 100.0f / snapshot.fuel.percent;
+  }
+
+  doc["site_id"] = snapshot.siteId;
+  doc["fw"] = snapshot.fwVersion;
+  doc["device_mac"] = snapshot.deviceId;
+  doc["group"] = "";
+  doc["province"] = "";
+  doc["city"] = "";
+  doc["sequence_id"] = snapshot.uptimeMs;
+
+  doc["temperature"] = 0.0f;
+  doc["humidity"] = 0.0f;
+  doc["dht_ok"] = false;
+  doc["dht_temp_valid"] = false;
+  doc["dht_hum_valid"] = false;
+
+  doc["commercial_voltage"] = snapshot.energy.voltage;
+  doc["commercial_current"] = snapshot.energy.current;
+  doc["commercial_power"] = snapshot.energy.power;
+  doc["commercial_energy"] = snapshot.energy.energyKwh;
+  doc["commercial_frequency"] = snapshot.energy.frequency;
+  doc["pzem_ok"] = snapshot.energy.online;
+  doc["pzem_voltage_valid"] = snapshot.energy.online;
+  doc["pzem_current_valid"] = snapshot.energy.online;
+  doc["pzem_power_valid"] = snapshot.energy.online;
+  doc["pzem_energy_valid"] = snapshot.energy.online;
+  doc["pzem_frequency_valid"] = snapshot.energy.online;
+  doc["pzem_read_ms"] = snapshot.uptimeMs;
+  doc["power_factor"] = snapshot.energy.powerFactor;
+  doc["pzem_source"] = pzemSource;
+
+  doc["load_source"] = loadSource;
+  doc["active_voltage"] = activeVoltage;
+  doc["active_current"] = activeCurrent;
+  doc["active_power"] = activePower;
+  doc["active_frequency"] = activeFrequency;
+  doc["active_power_factor"] = activePowerFactor;
+
+  doc["genset_type"] = gensetType;
+  doc["genset_status"] = gensetStatus;
+  doc["genset_mode"] = gensetMode;
+  doc["genset_voltage"] = gensetVoltage;
+  doc["genset_current"] = gensetCurrent;
+  doc["genset_power"] = gensetPower;
+  doc["genset_frequency"] = gensetFrequency;
+  doc["genset_energy"] = gensetEnergy;
+  doc["genset_battery_voltage"] = gensetBatteryVoltage;
+  doc["genset_hours"] = gensetHours;
+  doc["genset_fuel_percent"] = gensetFuelPercent;
+  doc["genset_power_factor"] = gensetPowerFactor;
+  doc["genset_ok"] = gensetOk;
+  doc["genset_breaker"] = gensetOnLoad ? "CLOSED" : "OPEN";
+
+  JsonArray coils = doc["genset_coils"].to<JsonArray>();
+  (void)coils;
+
+  doc["fuel"] = snapshot.fuel.percent;
+  doc["fuel_voltage"] = snapshot.fuel.raw;
+  doc["fuel_tank_capacity"] = fuelTankCapacity;
+  doc["fuel_liters"] = snapshot.fuel.liters;
+
+  JsonArray rectifiers = doc["rectifiers"].to<JsonArray>();
+  for (uint8_t rectifier = 0; rectifier < batteryCount; rectifier += Rs485Config::BANKS_PER_RECTIFIER) {
+    JsonObject rect = rectifiers.add<JsonObject>();
+    rect["id"] = (rectifier / Rs485Config::BANKS_PER_RECTIFIER) + 1;
+    JsonArray batteries = rect["batteries"].to<JsonArray>();
+
+    for (uint8_t offset = 0; offset < Rs485Config::BANKS_PER_RECTIFIER; ++offset) {
+      const uint8_t idx = rectifier + offset;
+      if (idx >= batteryCount) break;
+      const BatteryData& b = snapshot.batteryBanks[idx];
+      if (!b.online) continue;
+      JsonObject batt = batteries.add<JsonObject>();
+      batt["id"] = snapshot.batteryBankSlaveIds[idx];
+      batt["voltage"] = b.packVoltage;
+      batt["current"] = b.packCurrent;
+      batt["soc"] = b.soc;
+      batt["soh"] = b.soh;
+    }
+  }
+
+  String out;
+  serializeJson(doc, out);
+  return out;
+}
+}
+
+String TelemetryBuilder::buildJson(const TelemetrySnapshot& snapshot, bool completePayload, bool mcbeamCompatPayload) const {
+  if (mcbeamCompatPayload) {
+    return buildMcbeamPayload(snapshot);
+  }
+  return buildPowerEyePayload(snapshot, completePayload);
 }

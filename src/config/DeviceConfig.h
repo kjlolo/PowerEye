@@ -60,6 +60,7 @@ struct CloudConfig {
   uint32_t reportIntervalMs = 60000;
   uint32_t retryIntervalMs = 15000;
   bool completePayload = false;
+  bool mcbeamCompatPayload = false;
   bool mqttEnabled = false;
   String mqttHost = "";
   uint16_t mqttPort = 8883;
@@ -68,6 +69,8 @@ struct CloudConfig {
   String mqttUsername = "";
   String mqttPassword = "";
   String mqttTelemetryTopic = "powereye/telemetry";
+  String mqttCmdTopic = "powereye/cmd";
+  String mqttStatusTopic = "powereye/status";
   bool httpFallbackEnabled = true;
 };
 

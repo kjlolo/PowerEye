@@ -15,6 +15,7 @@ bool PreferencesStore::load(DeviceConfig& config) {
   config.cloud.reportIntervalMs = _prefs.getULong("report_ms", config.cloud.reportIntervalMs);
   config.cloud.retryIntervalMs = _prefs.getULong("retry_ms", config.cloud.retryIntervalMs);
   config.cloud.completePayload = _prefs.getBool("payload_full", config.cloud.completePayload);
+  config.cloud.mcbeamCompatPayload = _prefs.getBool("payload_mcb", config.cloud.mcbeamCompatPayload);
   config.cloud.mqttEnabled = _prefs.getBool("mqtt_en", config.cloud.mqttEnabled);
   config.cloud.mqttHost = _prefs.getString("mqtt_host", config.cloud.mqttHost);
   config.cloud.mqttPort = static_cast<uint16_t>(_prefs.getUShort("mqtt_port", config.cloud.mqttPort));
@@ -23,6 +24,8 @@ bool PreferencesStore::load(DeviceConfig& config) {
   config.cloud.mqttUsername = _prefs.getString("mqtt_user", config.cloud.mqttUsername);
   config.cloud.mqttPassword = _prefs.getString("mqtt_pass", config.cloud.mqttPassword);
   config.cloud.mqttTelemetryTopic = _prefs.getString("mqtt_topic", config.cloud.mqttTelemetryTopic);
+  config.cloud.mqttCmdTopic = _prefs.getString("mqtt_cmd_t", config.cloud.mqttCmdTopic);
+  config.cloud.mqttStatusTopic = _prefs.getString("mqtt_st_t", config.cloud.mqttStatusTopic);
   config.cloud.httpFallbackEnabled = _prefs.getBool("http_fb", config.cloud.httpFallbackEnabled);
 
   config.rs485.pzemEnabled = _prefs.getBool("pzem_en", config.rs485.pzemEnabled);
@@ -95,6 +98,7 @@ bool PreferencesStore::save(const DeviceConfig& config) {
   _prefs.putULong("report_ms", config.cloud.reportIntervalMs);
   _prefs.putULong("retry_ms", config.cloud.retryIntervalMs);
   _prefs.putBool("payload_full", config.cloud.completePayload);
+  _prefs.putBool("payload_mcb", config.cloud.mcbeamCompatPayload);
   _prefs.putBool("mqtt_en", config.cloud.mqttEnabled);
   _prefs.putString("mqtt_host", config.cloud.mqttHost);
   _prefs.putUShort("mqtt_port", config.cloud.mqttPort);
@@ -103,6 +107,8 @@ bool PreferencesStore::save(const DeviceConfig& config) {
   _prefs.putString("mqtt_user", config.cloud.mqttUsername);
   _prefs.putString("mqtt_pass", config.cloud.mqttPassword);
   _prefs.putString("mqtt_topic", config.cloud.mqttTelemetryTopic);
+  _prefs.putString("mqtt_cmd_t", config.cloud.mqttCmdTopic);
+  _prefs.putString("mqtt_st_t", config.cloud.mqttStatusTopic);
   _prefs.putBool("http_fb", config.cloud.httpFallbackEnabled);
 
   _prefs.putBool("pzem_en", config.rs485.pzemEnabled);

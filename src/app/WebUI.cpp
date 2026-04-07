@@ -386,6 +386,7 @@ void WebUI::begin() {
       const String mode = request->getParam("payload_mode", true)->value();
       _config.cloud.completePayload = mode.equalsIgnoreCase("complete");
     }
+    _config.cloud.mcbeamCompatPayload = request->hasParam("payload_mcbeam", true);
     _config.cloud.mqttEnabled = request->hasParam("mqtt_en", true);
     if (request->hasParam("mqtt_host", true)) {
       _config.cloud.mqttHost = request->getParam("mqtt_host", true)->value();
@@ -412,6 +413,20 @@ void WebUI::begin() {
       _config.cloud.mqttTelemetryTopic.trim();
       if (_config.cloud.mqttTelemetryTopic.isEmpty()) {
         _config.cloud.mqttTelemetryTopic = "powereye/telemetry";
+      }
+    }
+    if (request->hasParam("mqtt_cmd_topic", true)) {
+      _config.cloud.mqttCmdTopic = request->getParam("mqtt_cmd_topic", true)->value();
+      _config.cloud.mqttCmdTopic.trim();
+      if (_config.cloud.mqttCmdTopic.isEmpty()) {
+        _config.cloud.mqttCmdTopic = "powereye/cmd";
+      }
+    }
+    if (request->hasParam("mqtt_status_topic", true)) {
+      _config.cloud.mqttStatusTopic = request->getParam("mqtt_status_topic", true)->value();
+      _config.cloud.mqttStatusTopic.trim();
+      if (_config.cloud.mqttStatusTopic.isEmpty()) {
+        _config.cloud.mqttStatusTopic = "powereye/status";
       }
     }
     _config.cloud.httpFallbackEnabled = request->hasParam("http_fb", true);
@@ -711,6 +726,28 @@ void WebUI::begin() {
     request->send(200, "application/json", awsTestStatusJson());
   });
 
+  _server.on("/api/mqtt_test", HTTP_GET, [this](AsyncWebServerRequest* request) {
+    if (request->hasParam("action") && request->getParam("action")->value() == "start") {
+      bool accepted = false;
+      bool running = false;
+      if (_diagMutex != nullptr && xSemaphoreTake(_diagMutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+        if (!_mqttTestRunning) {
+          _mqttTestRequested = true;
+          _mqttTestRunning = true;
+          accepted = true;
+        }
+        running = _mqttTestRunning;
+        xSemaphoreGive(_diagMutex);
+      }
+      String json = "{";
+      json += "\"accepted\":" + String(accepted ? "true" : "false") + ",";
+      json += "\"running\":" + String(running ? "true" : "false");
+      json += "}";
+      return request->send(200, "application/json", json);
+    }
+    request->send(200, "application/json", mqttTestStatusJson());
+  });
+
   _server.begin();
 }
 
@@ -732,6 +769,15 @@ bool WebUI::consumeAwsTestRequest() {
   return requested;
 }
 
+bool WebUI::consumeMqttTestRequest() {
+  if (_diagMutex == nullptr) return false;
+  if (xSemaphoreTake(_diagMutex, pdMS_TO_TICKS(100)) != pdTRUE) return false;
+  const bool requested = _mqttTestRequested;
+  _mqttTestRequested = false;
+  xSemaphoreGive(_diagMutex);
+  return requested;
+}
+
 void WebUI::setNetworkDiagResult(const String& resultJson) {
   if (_diagMutex == nullptr) return;
   if (xSemaphoreTake(_diagMutex, pdMS_TO_TICKS(200)) != pdTRUE) return;
@@ -747,6 +793,15 @@ void WebUI::setAwsTestResult(const String& resultJson) {
   _awsTestLastResult = resultJson;
   _awsTestUpdatedMs = millis();
   _awsTestRunning = false;
+  xSemaphoreGive(_diagMutex);
+}
+
+void WebUI::setMqttTestResult(const String& resultJson) {
+  if (_diagMutex == nullptr) return;
+  if (xSemaphoreTake(_diagMutex, pdMS_TO_TICKS(200)) != pdTRUE) return;
+  _mqttTestLastResult = resultJson;
+  _mqttTestUpdatedMs = millis();
+  _mqttTestRunning = false;
   xSemaphoreGive(_diagMutex);
 }
 
@@ -776,6 +831,24 @@ String WebUI::awsTestStatusJson() {
     running = _awsTestRunning;
     updatedMs = _awsTestUpdatedMs;
     result = _awsTestLastResult;
+    xSemaphoreGive(_diagMutex);
+  }
+  String json = "{";
+  json += "\"running\":" + String(running ? "true" : "false") + ",";
+  json += "\"updated_ms\":" + String(updatedMs) + ",";
+  json += "\"result\":" + result;
+  json += "}";
+  return json;
+}
+
+String WebUI::mqttTestStatusJson() {
+  bool running = false;
+  unsigned long updatedMs = 0;
+  String result = "{}";
+  if (_diagMutex != nullptr && xSemaphoreTake(_diagMutex, pdMS_TO_TICKS(200)) == pdTRUE) {
+    running = _mqttTestRunning;
+    updatedMs = _mqttTestUpdatedMs;
+    result = _mqttTestLastResult;
     xSemaphoreGive(_diagMutex);
   }
   String json = "{";
@@ -876,9 +949,11 @@ String WebUI::dashboardHtml() const {
   html += "<div class='card diag'>";
   html += "<div class='label'>Network & AWS Tests</div>";
   html += "<div class='actions'><button class='btn btn-secondary' type='button' onclick='runNetworkDiag()'>Test Network</button>";
-  html += "<button class='btn btn-secondary' type='button' onclick='runAwsTest()'>Test AWS Server</button></div>";
+  html += "<button class='btn btn-secondary' type='button' onclick='runAwsTest()'>Test AWS Server</button>";
+  html += "<button class='btn btn-secondary' type='button' onclick='runMqttTest()'>Test MQTT</button></div>";
   html += "<div class='meta'>Network Diagnostics</div><pre id='network-diag-output'>Press Test Network to run AT diagnostics.</pre>";
   html += "<div class='meta'>AWS Test Result</div><pre id='aws-test-output'>Press Test AWS Server to validate API reachability.</pre>";
+  html += "<div class='meta'>MQTT Test Result</div><pre id='mqtt-test-output'>Press Test MQTT to validate broker connectivity and publish.</pre>";
   html += "</div>";
   html += R"HTML(<script>
 const BADGE_OK = "badge badge-ok";
@@ -1013,6 +1088,41 @@ async function runAwsTest() {
   }
 }
 
+async function runMqttTest() {
+  const out = document.getElementById('mqtt-test-output');
+  if (out) out.textContent = 'Running MQTT test...';
+  try {
+    const startRes = await fetch('/api/mqtt_test?action=start', { cache: 'no-store' });
+    if (!startRes.ok) {
+      if (out) out.textContent = `MQTT test start failed: HTTP ${startRes.status}`;
+      return;
+    }
+    let attempts = 0;
+    while (attempts < 60) {
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      const res = await fetch('/api/mqtt_test', { cache: 'no-store' });
+      if (!res.ok) {
+        if (out) out.textContent = `MQTT test failed: HTTP ${res.status}`;
+        return;
+      }
+      const mqttState = await res.json();
+      if (mqttState.running) {
+        attempts += 1;
+        continue;
+      }
+      if (mqttState.result) {
+        if (out) out.textContent = safeFormatDiag(mqttState.result);
+      } else {
+        if (out) out.textContent = safeFormatDiag(mqttState);
+      }
+      return;
+    }
+    if (out) out.textContent = 'MQTT test timed out';
+  } catch (e) {
+    if (out) out.textContent = `MQTT test error: ${e}`;
+  }
+}
+
 async function refreshStatus() {
   try {
     const res = await fetch('/api/status', { cache: 'no-store' });
@@ -1086,6 +1196,9 @@ String WebUI::settingsHtml() const {
   html += (_config.cloud.completePayload ? " selected" : "");
   html += ">Complete (full site dump)</option>";
   html += "</select></div>";
+  html += "<div class='field'><label>Schema Compatibility</label><label class='check'><input type='checkbox' name='payload_mcbeam' ";
+  html += (_config.cloud.mcbeamCompatPayload ? "checked" : "");
+  html += ">Use McBeam-compatible JSON fields</label></div>";
   html += "<div style='grid-column:1/-1;height:1px;background:var(--line);margin:4px 0 6px'></div>";
   html += "<div style='grid-column:1/-1'><div class='label'>MQTT Transport</div></div>";
   html += "<div class='field'><label>MQTT Transport</label><label class='check'><input type='checkbox' name='mqtt_en' ";
@@ -1094,6 +1207,8 @@ String WebUI::settingsHtml() const {
   html += "<div class='field'><label>MQTT Broker Host/IP</label><input name='mqtt_host' value='" + htmlEscape(_config.cloud.mqttHost) + "'></div>";
   html += "<div class='field'><label>MQTT Broker Port</label><input name='mqtt_port' type='number' min='1' max='65535' value='" + String(_config.cloud.mqttPort) + "'></div>";
   html += "<div class='field'><label>MQTT Topic</label><input name='mqtt_topic' value='" + htmlEscape(_config.cloud.mqttTelemetryTopic) + "'></div>";
+  html += "<div class='field'><label>MQTT CMD Topic (Step 2)</label><input name='mqtt_cmd_topic' value='" + htmlEscape(_config.cloud.mqttCmdTopic) + "'></div>";
+  html += "<div class='field'><label>MQTT Status Topic (Step 2)</label><input name='mqtt_status_topic' value='" + htmlEscape(_config.cloud.mqttStatusTopic) + "'></div>";
   html += "<div class='field'><label>MQTT Client ID (optional)</label><input name='mqtt_client_id' value='" + htmlEscape(_config.cloud.mqttClientId) + "'></div>";
   html += "<div class='field'><label>MQTT Username (optional)</label><input name='mqtt_user' value='" + htmlEscape(_config.cloud.mqttUsername) + "'></div>";
   html += "<div class='field'><label>MQTT Password (optional)</label><input name='mqtt_pass' value='" + htmlEscape(_config.cloud.mqttPassword) + "'></div>";

@@ -4,5 +4,5 @@
 
 class TelemetryBuilder {
 public:
-  String buildJson(const TelemetrySnapshot& snapshot, bool completePayload) const;
+  String buildJson(const TelemetrySnapshot& snapshot, bool completePayload, bool mcbeamCompatPayload) const;
 };
