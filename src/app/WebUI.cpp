@@ -1398,15 +1398,16 @@ String WebUI::settingsHtml() const {
 
   html += "<div id='tab-fuel' class='tab-pane'>";
   html += "<details class='card'><summary class='section-title' style='margin:0 0 10px'>Fuel Sensor</summary><div class='form-grid'>";
+  html += "<div class='field'><label>Fuel Sensor</label><label class='check'><input type='checkbox' name='fuel_en' ";
+  html += (_config.fuel.enabled ? "checked" : "");
+  html += ">Enable Fuel Sensor</label></div>";
   html += "<div class='field'><label>Tank Length (cm)</label><input name='fuel_tank_l' type='number' step='0.1' min='0' value='" + String(_config.fuel.tankLengthCm, 1) + "'></div>";
   html += "<div class='field'><label>Tank Diameter (cm) - horizontal cylinder</label><input name='fuel_tank_d' type='number' step='0.1' min='0' value='" + String(_config.fuel.tankDiameterCm, 1) + "'></div>";
   html += "<div class='field'><label>Sensor Reach / Float Travel (cm)</label><input name='fuel_sensor_h' type='number' step='0.1' min='0' value='" + String(_config.fuel.sensorReachHeightCm, 1) + "'></div>";
   html += "<div class='field'><label>Sensor Unreached Height (cm, fallback)</label><input name='fuel_unreached_h' type='number' step='0.1' min='0' value='" + String(_config.fuel.sensorUnreachedHeightCm, 1) + "'></div>";
   html += "<div class='field'><label>Tank Liters @ 100% (computed)</label><input type='number' readonly value='" + String(tankLiters, 1) + "'></div>";
   html += "<div class='field'><label>Dead Space Liters (manual fallback)</label><input name='fuel_dead' type='number' step='0.1' min='0' value='" + String(_config.fuel.deadSpaceLiters, 1) + "'>";
-  html += "<label class='check'><input type='checkbox' name='fuel_en' ";
-  html += (_config.fuel.enabled ? "checked" : "");
-  html += ">Enable Fuel Sensor</label></div>";
+  html += "</div>";
   html += "<div class='field' id='fuel-cal-field'><label>Fuel Calibration Tool</label><button id='fuel-cal-btn' class='btn btn-secondary' type='button' onclick='openFuelCalModal()'>Calibrate from Live Raw</button>";
   html += "<div class='tip'>Capture points at 0/25/50/75/100% of sensor stroke height. Hold level steady 12-20s before capture.</div></div>";
   html += "</div>";
