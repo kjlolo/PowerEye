@@ -1223,22 +1223,35 @@ String WebUI::settingsHtml() const {
   html += ">Enable MQTT Publish</label></div>";
   html += "<div class='field'><label>MQTT Broker Host/IP</label><input name='mqtt_host' value='" + htmlEscape(_config.cloud.mqttHost) + "'></div>";
   html += "<div class='field'><label>MQTT Broker Port</label><input name='mqtt_port' type='number' min='1' max='65535' value='" + String(_config.cloud.mqttPort) + "'></div>";
-  html += "<div class='field'><label>MQTT Topic</label><input name='mqtt_topic' value='" + htmlEscape(_config.cloud.mqttTelemetryTopic) + "'></div>";
-  html += "<div class='field'><label>MQTT CMD Topic (Step 2)</label><input name='mqtt_cmd_topic' value='" + htmlEscape(_config.cloud.mqttCmdTopic) + "'></div>";
-  html += "<div class='field'><label>MQTT Status Topic (Step 2)</label><input name='mqtt_status_topic' value='" + htmlEscape(_config.cloud.mqttStatusTopic) + "'></div>";
-  html += "<div class='field'><label>MQTT Client ID (optional)</label><input name='mqtt_client_id' value='" + htmlEscape(_config.cloud.mqttClientId) + "'></div>";
-  html += "<div class='field'><label>MQTT Username (optional)</label><input name='mqtt_user' value='" + htmlEscape(_config.cloud.mqttUsername) + "'></div>";
-  html += "<div class='field'><label>MQTT Password (optional)</label><input name='mqtt_pass' value='" + htmlEscape(_config.cloud.mqttPassword) + "'></div>";
   html += "<div class='field'><label>MQTT TLS</label><label class='check'><input type='checkbox' name='mqtt_tls' ";
   html += (_config.cloud.mqttTls ? "checked" : "");
   html += ">Use TLS (recommended)</label></div>";
   html += "<div class='field'><label>MQTT mTLS (Client Certificate)</label><label class='check'><input type='checkbox' name='mqtt_mtls' ";
   html += (_config.cloud.mqttMtlsEnabled ? "checked" : "");
   html += ">Enable client certificate authentication</label></div>";
-  html += "<div class='field'><label>TLS Hostname / SNI (optional)</label><input name='mqtt_tls_sni' value='" + htmlEscape(_config.cloud.mqttTlsHostname) + "'></div>";
-  html += "<div class='field' style='grid-column:1/-1'><label>CA Certificate PEM (optional)</label><textarea name='mqtt_ca_pem' rows='5' placeholder='-----BEGIN CERTIFICATE-----'>" + htmlEscape(_config.cloud.mqttCaCertPem) + "</textarea></div>";
-  html += "<div class='field' style='grid-column:1/-1'><label>Client Certificate PEM (for mTLS)</label><textarea name='mqtt_client_cert_pem' rows='5' placeholder='-----BEGIN CERTIFICATE-----'>" + htmlEscape(_config.cloud.mqttClientCertPem) + "</textarea></div>";
-  html += "<div class='field' style='grid-column:1/-1'><label>Client Private Key PEM (for mTLS)</label><textarea name='mqtt_client_key_pem' rows='6' placeholder='-----BEGIN PRIVATE KEY-----'>" + htmlEscape(_config.cloud.mqttClientKeyPem) + "</textarea></div>";
+  html += "<div class='field'><label>Provisioning Checklist</label>";
+  html += "<div id='secrets-checklist' class='tip' style='line-height:1.7'>";
+  html += "<div id='chk_mqtt_topic'>[ ] MQTT topic</div>";
+  html += "<div id='chk_mqtt_cmd_topic'>[ ] MQTT CMD topic</div>";
+  html += "<div id='chk_mqtt_status_topic'>[ ] MQTT status topic</div>";
+  html += "<div id='chk_mqtt_client_id'>[ ] MQTT client ID</div>";
+  html += "<div id='chk_mqtt_user'>[ ] MQTT username</div>";
+  html += "<div id='chk_mqtt_pass'>[ ] MQTT password</div>";
+  html += "<div id='chk_mqtt_tls_sni'>[ ] TLS hostname (optional)</div>";
+  html += "<div id='chk_mqtt_ca_pem'>[ ] CA certificate (optional)</div>";
+  html += "<div id='chk_mqtt_client_cert_pem'>[ ] Client certificate</div>";
+  html += "<div id='chk_mqtt_client_key_pem'>[ ] Client private key</div>";
+  html += "</div></div>";
+  html += "<input type='hidden' name='mqtt_topic' value='" + htmlEscape(_config.cloud.mqttTelemetryTopic) + "'>";
+  html += "<input type='hidden' name='mqtt_cmd_topic' value='" + htmlEscape(_config.cloud.mqttCmdTopic) + "'>";
+  html += "<input type='hidden' name='mqtt_status_topic' value='" + htmlEscape(_config.cloud.mqttStatusTopic) + "'>";
+  html += "<input type='hidden' name='mqtt_client_id' value='" + htmlEscape(_config.cloud.mqttClientId) + "'>";
+  html += "<input type='hidden' name='mqtt_user' value='" + htmlEscape(_config.cloud.mqttUsername) + "'>";
+  html += "<input type='hidden' name='mqtt_pass' value='" + htmlEscape(_config.cloud.mqttPassword) + "'>";
+  html += "<input type='hidden' name='mqtt_tls_sni' value='" + htmlEscape(_config.cloud.mqttTlsHostname) + "'>";
+  html += "<textarea name='mqtt_ca_pem' style='display:none'>" + htmlEscape(_config.cloud.mqttCaCertPem) + "</textarea>";
+  html += "<textarea name='mqtt_client_cert_pem' style='display:none'>" + htmlEscape(_config.cloud.mqttClientCertPem) + "</textarea>";
+  html += "<textarea name='mqtt_client_key_pem' style='display:none'>" + htmlEscape(_config.cloud.mqttClientKeyPem) + "</textarea>";
   html += "<div class='field'><label>HTTP Fallback</label><label class='check'><input type='checkbox' name='http_fb' ";
   html += (_config.cloud.httpFallbackEnabled ? "checked" : "");
   html += ">Use HTTP when MQTT publish fails</label></div>";
@@ -1501,7 +1514,33 @@ function importDeviceSecrets() {
       status.textContent = 'No supported #define entries found.';
     }
   }
+  refreshSecretsChecklist();
 }
+
+function setChecklistState(fieldName, label) {
+  const item = document.getElementById(`chk_${fieldName}`);
+  if (!item) return;
+  const el = document.querySelector(`[name='${fieldName}']`);
+  let hasValue = false;
+  if (el) {
+    hasValue = (el.value || '').trim().length > 0;
+  }
+  item.textContent = `${hasValue ? '[x]' : '[ ]'} ${label}`;
+}
+
+function refreshSecretsChecklist() {
+  setChecklistState('mqtt_topic', 'MQTT topic');
+  setChecklistState('mqtt_cmd_topic', 'MQTT CMD topic');
+  setChecklistState('mqtt_status_topic', 'MQTT status topic');
+  setChecklistState('mqtt_client_id', 'MQTT client ID');
+  setChecklistState('mqtt_user', 'MQTT username');
+  setChecklistState('mqtt_pass', 'MQTT password');
+  setChecklistState('mqtt_tls_sni', 'TLS hostname (optional)');
+  setChecklistState('mqtt_ca_pem', 'CA certificate (optional)');
+  setChecklistState('mqtt_client_cert_pem', 'Client certificate');
+  setChecklistState('mqtt_client_key_pem', 'Client private key');
+}
+refreshSecretsChecklist();
 </script>
 </div></body></html>)HTML";
   return html;
