@@ -64,6 +64,7 @@ namespace {
       const uint8_t sid = config.rs485.generatorSlaveIds[i];
       if (sid < 1 || sid > 247) continue;
       if (config.rs485.generatorModels[i] == GeneratorModel::NONE) continue;
+      if (config.rs485.generatorModels[i] == GeneratorModel::HAT600) continue;
       return i;
     }
     return -1;
@@ -215,6 +216,7 @@ SiteController::SiteController()
     _mqtt(_modem),
     _pzem(_modbus, 1),
     _genset(_modbus, 2),
+    _ats(_modbus, 11),
     _battery(_modbus, 3),
     _fuel(Pins::FUEL_ADC),
     _publishManager(_http, _mqtt, _queue, _config),
@@ -235,6 +237,7 @@ void SiteController::begin() {
   Serial.printf("[MODEM] init=%s lastError=%s\n", modemReady ? "OK" : "FAIL", _modem.lastError().c_str());
   _pzem.setSlaveId(_config.rs485.pzemSlaveId);
   _genset.setSlaveId(selectedGeneratorSlaveId(_config));
+  _ats.setSlaveId(_config.rs485.atsSlaveId);
   _battery.configure(selectedBatteryModel(_config), selectedBatterySlaveId(_config));
   _pzem.begin();
   _fuel.begin();
@@ -333,12 +336,29 @@ void SiteController::handlePolling() {
   const unsigned long now = millis();
   _pzem.setSlaveId(_config.rs485.pzemSlaveId);
   _genset.setSlaveId(selectedGeneratorSlaveId(_config));
+  _ats.setSlaveId(_config.rs485.atsSlaveId);
   _battery.configure(selectedBatteryModel(_config), selectedBatterySlaveId(_config));
 
   if (now - _lastPzemPoll >= AppConfig::PZEM_POLL_INTERVAL_MS) {
     _lastPzemPoll = now;
     if (_config.rs485.pzemEnabled) {
       _pzem.poll();
+    }
+  }
+
+  if (now - _lastAtsPoll >= AppConfig::GENSET_POLL_INTERVAL_MS) {
+    _lastAtsPoll = now;
+    if (_config.rs485.atsEnabled && _config.rs485.atsModel == AtsModel::HAT600 &&
+        _config.rs485.atsSlaveId >= 1 && _config.rs485.atsSlaveId <= 247) {
+      _ats.setSlaveId(_config.rs485.atsSlaveId);
+      if (_ats.poll()) {
+        _snapshot.ats = _ats.data();
+      } else {
+        _snapshot.ats.online = false;
+      }
+    } else {
+      _snapshot.ats = AtsData{};
+      _snapshot.ats.online = false;
     }
   }
 
@@ -366,8 +386,12 @@ void SiteController::handlePolling() {
           continue;
         }
         _genset.setSlaveId(sid);
-        if (model == GeneratorModel::HGM6100NC && _genset.poll()) {
-          _snapshot.gensets[i] = _genset.data();
+        if (model == GeneratorModel::HGM6100NC) {
+          if (_genset.poll()) {
+            _snapshot.gensets[i] = _genset.data();
+          } else {
+            _snapshot.gensets[i].online = false;
+          }
         } else {
           _snapshot.gensets[i].online = false;
         }
@@ -441,9 +465,12 @@ void SiteController::updateSnapshot() {
   _snapshot.transportStatus = _lastTransportStatus;
   _snapshot.lastError = _lastPublishError;
   _snapshot.cfgPzemEnabled = _config.rs485.pzemEnabled;
+  _snapshot.cfgAtsEnabled = _config.rs485.atsEnabled;
   _snapshot.cfgGeneratorEnabled = _config.rs485.generatorEnabled;
   _snapshot.cfgBatteryEnabled = _config.rs485.batteryEnabled;
   _snapshot.cfgFuelEnabled = _config.fuel.enabled;
+  _snapshot.atsSlaveId = _config.rs485.atsSlaveId;
+  _snapshot.atsModel = _config.rs485.atsModel;
   _snapshot.energy = _pzem.data();
   _snapshot.gensetCountConfigured = _config.rs485.generatorCount > Rs485Config::MAX_GENERATORS
     ? Rs485Config::MAX_GENERATORS
@@ -488,6 +515,9 @@ void SiteController::updateSnapshot() {
 
   if (!_config.rs485.pzemEnabled) {
     _snapshot.energy.online = false;
+  }
+  if (!_config.rs485.atsEnabled || _config.rs485.atsModel == AtsModel::NONE) {
+    _snapshot.ats.online = false;
   }
   if (!_config.rs485.generatorEnabled || selectedGeneratorModel(_config) == GeneratorModel::NONE) {
     for (uint8_t i = 0; i < Rs485Config::MAX_GENERATORS; ++i) {

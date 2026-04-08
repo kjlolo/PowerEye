@@ -6,6 +6,7 @@
 #include "AlarmState.h"
 #include "GensetData.h"
 #include "BatteryData.h"
+#include "AtsData.h"
 
 struct TelemetrySnapshot {
   String deviceId;
@@ -25,11 +26,15 @@ struct TelemetrySnapshot {
   String transportStatus;
   String lastError;
   bool cfgPzemEnabled = true;
+  bool cfgAtsEnabled = false;
   bool cfgGeneratorEnabled = false;
   bool cfgBatteryEnabled = false;
   bool cfgFuelEnabled = true;
 
   EnergyData energy;
+  uint8_t atsSlaveId = 0;
+  AtsModel atsModel = AtsModel::NONE;
+  AtsData ats;
   uint8_t gensetCountConfigured = 0;
   uint8_t gensetSlaveIds[Rs485Config::MAX_GENERATORS] = {};
   GeneratorModel gensetModels[Rs485Config::MAX_GENERATORS] = {

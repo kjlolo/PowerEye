@@ -4,6 +4,12 @@
 enum class GeneratorModel : uint8_t {
   NONE = 0,
   HGM6100NC = 1,
+  HAT600 = 2, // legacy only, ATS moved to dedicated AtsModel
+};
+
+enum class AtsModel : uint8_t {
+  NONE = 0,
+  HAT600 = 1,
 };
 
 enum class BatteryModel : uint8_t {
@@ -15,6 +21,7 @@ enum class BatteryModel : uint8_t {
 inline const char* generatorModelToString(GeneratorModel model) {
   switch (model) {
     case GeneratorModel::HGM6100NC: return "hgm6100nc";
+    case GeneratorModel::HAT600: return "hat600";
     case GeneratorModel::NONE:
     default: return "none";
   }
@@ -24,7 +31,25 @@ inline GeneratorModel generatorModelFromString(const String& value) {
   if (value.equalsIgnoreCase("hgm6100nc")) {
     return GeneratorModel::HGM6100NC;
   }
+  if (value.equalsIgnoreCase("hat600")) {
+    return GeneratorModel::HAT600;
+  }
   return GeneratorModel::NONE;
+}
+
+inline const char* atsModelToString(AtsModel model) {
+  switch (model) {
+    case AtsModel::HAT600: return "hat600";
+    case AtsModel::NONE:
+    default: return "none";
+  }
+}
+
+inline AtsModel atsModelFromString(const String& value) {
+  if (value.equalsIgnoreCase("hat600")) {
+    return AtsModel::HAT600;
+  }
+  return AtsModel::NONE;
 }
 
 inline const char* batteryModelToString(BatteryModel model) {
@@ -89,6 +114,9 @@ struct Rs485Config {
 
   bool pzemEnabled = true;
   uint8_t pzemSlaveId = 1;
+  bool atsEnabled = false;
+  uint8_t atsSlaveId = 11;
+  AtsModel atsModel = AtsModel::NONE;
   bool generatorEnabled = false;
   uint8_t generatorCount = 1;
   uint8_t generatorSlaveIds[MAX_GENERATORS] = {2, 19, 20, 24};

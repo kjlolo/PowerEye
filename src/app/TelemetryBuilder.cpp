@@ -62,6 +62,7 @@ String buildPowerEyePayload(const TelemetrySnapshot& snapshot, bool completePayl
   doc["transport_status"] = snapshot.transportStatus;
   doc["last_error"] = snapshot.lastError;
   doc["cfg_pzem_enabled"] = snapshot.cfgPzemEnabled;
+  doc["cfg_ats_enabled"] = snapshot.cfgAtsEnabled;
   doc["cfg_generator_enabled"] = snapshot.cfgGeneratorEnabled;
   doc["cfg_battery_enabled"] = snapshot.cfgBatteryEnabled;
   doc["cfg_fuel_enabled"] = snapshot.cfgFuelEnabled;
@@ -144,6 +145,55 @@ String buildPowerEyePayload(const TelemetrySnapshot& snapshot, bool completePayl
   energy["power_factor"] = snapshot.energy.powerFactor;
   energy["alarm_status"] = snapshot.energy.alarmStatus;
   energy["online"] = snapshot.energy.online;
+
+  const char* atsSupplySource = "none";
+  if (snapshot.ats.source1SwitchClosed && !snapshot.ats.source2SwitchClosed) atsSupplySource = "commercial";
+  else if (snapshot.ats.source2SwitchClosed && !snapshot.ats.source1SwitchClosed) atsSupplySource = "genset";
+  else if (snapshot.ats.source1SwitchClosed && snapshot.ats.source2SwitchClosed) atsSupplySource = "both";
+  doc["ats_online"] = snapshot.ats.online;
+  doc["ats_supply_source"] = atsSupplySource;
+
+  JsonObject ats = doc["ats"].to<JsonObject>();
+  ats["slave_id"] = snapshot.atsSlaveId;
+  ats["model"] = atsModelToString(snapshot.atsModel);
+  ats["online"] = snapshot.ats.online;
+  ats["source1_switch_closed"] = snapshot.ats.source1SwitchClosed;
+  ats["source2_switch_closed"] = snapshot.ats.source2SwitchClosed;
+  ats["source1_voltage_normal"] = snapshot.ats.source1VoltageNormal;
+  ats["source2_voltage_normal"] = snapshot.ats.source2VoltageNormal;
+  ats["auto_mode"] = snapshot.ats.autoMode;
+  ats["manual_mode"] = snapshot.ats.manualMode;
+  ats["start_generator_output"] = snapshot.ats.startGeneratorOutput;
+  ats["common_warning"] = snapshot.ats.commonWarning;
+  ats["common_alarm"] = snapshot.ats.commonAlarm;
+  ats["fail_to_changeover"] = snapshot.ats.failToChangeover;
+  ats["source1_voltage_a"] = snapshot.ats.source1VoltageA;
+  ats["source2_voltage_a"] = snapshot.ats.source2VoltageA;
+  ats["source1_current_a"] = snapshot.ats.source1CurrentA;
+  ats["source2_current_a"] = snapshot.ats.source2CurrentA;
+  ats["frequency1"] = snapshot.ats.frequency1;
+  ats["frequency2"] = snapshot.ats.frequency2;
+  ats["total_active_power_kw"] = snapshot.ats.totalActivePowerKw;
+  ats["total_apparent_power_kva"] = snapshot.ats.totalApparentPowerKva;
+  ats["total_power_factor"] = snapshot.ats.totalPowerFactor;
+  if (completePayload) {
+    ats["source1_voltage_b"] = snapshot.ats.source1VoltageB;
+    ats["source1_voltage_c"] = snapshot.ats.source1VoltageC;
+    ats["source2_voltage_b"] = snapshot.ats.source2VoltageB;
+    ats["source2_voltage_c"] = snapshot.ats.source2VoltageC;
+    ats["source1_current_b"] = snapshot.ats.source1CurrentB;
+    ats["source1_current_c"] = snapshot.ats.source1CurrentC;
+    ats["source2_current_b"] = snapshot.ats.source2CurrentB;
+    ats["source2_current_c"] = snapshot.ats.source2CurrentC;
+    ats["source1_overvoltage_alarm"] = snapshot.ats.source1OvervoltageAlarm;
+    ats["source1_undervoltage_alarm"] = snapshot.ats.source1UndervoltageAlarm;
+    ats["source1_overfrequency_alarm"] = snapshot.ats.source1OverfrequencyAlarm;
+    ats["source1_underfrequency_alarm"] = snapshot.ats.source1UnderfrequencyAlarm;
+    ats["source2_overvoltage_alarm"] = snapshot.ats.source2OvervoltageAlarm;
+    ats["source2_undervoltage_alarm"] = snapshot.ats.source2UndervoltageAlarm;
+    ats["source2_overfrequency_alarm"] = snapshot.ats.source2OverfrequencyAlarm;
+    ats["source2_underfrequency_alarm"] = snapshot.ats.source2UnderfrequencyAlarm;
+  }
 
   JsonArray gensets = doc["gensets"].to<JsonArray>();
   for (uint8_t i = 0; i < gensetCount; ++i) {
@@ -331,6 +381,8 @@ String buildMcbeamPayload(const TelemetrySnapshot& snapshot, bool syncOnly, cons
   const char* gensetType = "UNKNOWN";
   if (primaryGensetModel == GeneratorModel::HGM6100NC) {
     gensetType = "HGM6100NC";
+  } else if (primaryGensetModel == GeneratorModel::HAT600) {
+    gensetType = "HAT600";
   }
 
   const char* gensetMode = "UNKNOWN";
@@ -402,6 +454,9 @@ String buildMcbeamPayload(const TelemetrySnapshot& snapshot, bool syncOnly, cons
   doc["pzem_read_ms"] = snapshot.uptimeMs;
   doc["power_factor"] = snapshot.energy.powerFactor;
   doc["pzem_source"] = pzemSource;
+  doc["ats_online"] = snapshot.ats.online;
+  doc["ats_source1_switch_closed"] = snapshot.ats.source1SwitchClosed;
+  doc["ats_source2_switch_closed"] = snapshot.ats.source2SwitchClosed;
 
   doc["load_source"] = loadSource;
   doc["active_voltage"] = activeVoltage;

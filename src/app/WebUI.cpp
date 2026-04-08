@@ -63,6 +63,18 @@ String generatorModelSelectHtml(const String& name, GeneratorModel model) {
   return html;
 }
 
+String atsModelSelectHtml(const String& name, AtsModel model) {
+  String html;
+  html += "<select name='" + name + "'>";
+  html += "<option value='none'";
+  html += (model == AtsModel::NONE ? " selected" : "");
+  html += ">None</option>";
+  html += "<option value='hat600'";
+  html += (model == AtsModel::HAT600 ? " selected" : "");
+  html += ">HAT600</option></select>";
+  return html;
+}
+
 String generatorRowsHtml(const Rs485Config& cfg) {
   String html;
   const uint8_t total = cfg.generatorCount > Rs485Config::MAX_GENERATORS
@@ -498,6 +510,13 @@ void WebUI::begin() {
     if (request->hasParam("pzem_sid", true)) {
       _config.rs485.pzemSlaveId = static_cast<uint8_t>(request->getParam("pzem_sid", true)->value().toInt());
     }
+    _config.rs485.atsEnabled = request->hasParam("ats_en", true);
+    if (request->hasParam("ats_sid", true)) {
+      _config.rs485.atsSlaveId = static_cast<uint8_t>(request->getParam("ats_sid", true)->value().toInt());
+    }
+    if (request->hasParam("ats_model", true)) {
+      _config.rs485.atsModel = atsModelFromString(request->getParam("ats_model", true)->value());
+    }
     _config.rs485.generatorEnabled = request->hasParam("gen_en", true);
     if (request->hasParam("gen_count", true)) {
       uint8_t requested = static_cast<uint8_t>(request->getParam("gen_count", true)->value().toInt());
@@ -547,6 +566,9 @@ void WebUI::begin() {
     };
     bool duplicateFound = false;
     if (_config.rs485.pzemEnabled && !markUsed(_config.rs485.pzemSlaveId)) duplicateFound = true;
+    if (_config.rs485.atsEnabled && _config.rs485.atsModel != AtsModel::NONE) {
+      if (!markUsed(_config.rs485.atsSlaveId)) duplicateFound = true;
+    }
     if (_config.rs485.generatorEnabled) {
       const uint8_t activeGenerators = _config.rs485.generatorCount;
       for (uint8_t i = 0; i < activeGenerators; ++i) {
@@ -568,7 +590,7 @@ void WebUI::begin() {
       }
     }
     if (duplicateFound) {
-      return request->send(400, "text/plain", "Duplicate or invalid slave ID found. Ensure all enabled devices/banks use unique slave IDs.");
+      return request->send(400, "text/plain", "Duplicate or invalid slave ID found. Ensure PZEM/ATS/generator/battery devices use unique slave IDs.");
     }
     if (request->hasParam("rs485_baud", true)) {
       _config.rs485.baudRate = request->getParam("rs485_baud", true)->value().toInt();
@@ -700,6 +722,11 @@ void WebUI::begin() {
     json += "\"energy_current\":" + String(_snapshot.energy.current, 2) + ",";
     json += "\"energy_frequency\":" + String(_snapshot.energy.frequency, 2) + ",";
     json += "\"energy_kwh\":" + String(_snapshot.energy.energyKwh, 3) + ",";
+    json += "\"ats_online\":" + String(_snapshot.ats.online ? "true" : "false") + ",";
+    json += "\"ats_source1_switch_closed\":" + String(_snapshot.ats.source1SwitchClosed ? "true" : "false") + ",";
+    json += "\"ats_source2_switch_closed\":" + String(_snapshot.ats.source2SwitchClosed ? "true" : "false") + ",";
+    json += "\"ats_auto_mode\":" + String(_snapshot.ats.autoMode ? "true" : "false") + ",";
+    json += "\"ats_alarm\":" + String((_snapshot.ats.commonAlarm || _snapshot.ats.commonWarning) ? "true" : "false") + ",";
     json += "\"gensets\":[";
     const uint8_t gensetCount = _snapshot.gensetCountConfigured > Rs485Config::MAX_GENERATORS
       ? Rs485Config::MAX_GENERATORS
@@ -1347,7 +1374,7 @@ String WebUI::settingsHtml() const {
   html += "<div id='tab-devices' class='tab-pane'>";
   html += "<div class='section-title'>RS485 Network</div><div class='card'><div class='form-grid'>";
   html += "<div class='field advanced-only'><label>RS485 Baud</label><input name='rs485_baud' type='number' min='1200' value='" + String(_config.rs485.baudRate) + "'></div>";
-  html += "</div><p class='tip'>Shared bus settings used by PZEM, generator modules and rectifier battery modules.</p></div>";
+  html += "</div><p class='tip'>Shared bus settings used by PZEM, ATS controller, generator modules and rectifier battery modules.</p></div>";
 
   html += "<div class='section-title'>PZEM Meter</div><div class='card'><div class='form-grid'>";
   html += "<div class='field'><label>PZEM Slave ID</label><input name='pzem_sid' type='number' min='1' max='247' value='" + String(_config.rs485.pzemSlaveId) + "'>";
@@ -1355,6 +1382,16 @@ String WebUI::settingsHtml() const {
   html += (_config.rs485.pzemEnabled ? "checked" : "");
   html += ">Enable PZEM</label></div>";
   html += "</div></div>";
+
+  html += "<div class='section-title'>ATS Controller</div><div class='card'><div class='form-grid'>";
+  html += "<div class='field'><label>ATS Slave ID</label><input name='ats_sid' type='number' min='1' max='247' value='" + String(_config.rs485.atsSlaveId) + "'></div>";
+  html += "<div class='field'><label>ATS Model</label>";
+  html += atsModelSelectHtml("ats_model", _config.rs485.atsModel);
+  html += "</div>";
+  html += "<div class='field'><label>ATS Enable</label><label class='check'><input type='checkbox' name='ats_en' ";
+  html += (_config.rs485.atsEnabled ? "checked" : "");
+  html += ">Enable ATS</label></div>";
+  html += "</div><p class='tip'>ATS controller monitors transfer state between commercial and generator sources.</p></div>";
 
   html += "<details class='card'><summary class='section-title' style='margin:0 0 10px'>Generator Modules</summary><div class='form-grid'>";
   html += "<div class='field'><label>Generator Monitor</label><label class='check'><input type='checkbox' name='gen_en' ";

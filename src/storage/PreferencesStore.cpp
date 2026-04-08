@@ -38,6 +38,10 @@ bool PreferencesStore::load(DeviceConfig& config) {
 
   config.rs485.pzemEnabled = _prefs.getBool("pzem_en", config.rs485.pzemEnabled);
   config.rs485.pzemSlaveId = _prefs.getUChar("pzem_sid", config.rs485.pzemSlaveId);
+  config.rs485.atsEnabled = _prefs.getBool("ats_en", config.rs485.atsEnabled);
+  config.rs485.atsSlaveId = _prefs.getUChar("ats_sid", config.rs485.atsSlaveId);
+  config.rs485.atsModel = static_cast<AtsModel>(
+    _prefs.getUChar("ats_model", static_cast<uint8_t>(config.rs485.atsModel)));
   config.rs485.generatorEnabled = _prefs.getBool("gen_en", config.rs485.generatorEnabled);
   config.rs485.generatorCount = _prefs.getUChar("gen_cnt", config.rs485.generatorCount);
   if (config.rs485.generatorCount < 1) config.rs485.generatorCount = 1;
@@ -56,6 +60,18 @@ bool PreferencesStore::load(DeviceConfig& config) {
   if (!_prefs.isKey("gen_model0") && _prefs.isKey("gen_model")) {
     config.rs485.generatorModels[0] = static_cast<GeneratorModel>(
       _prefs.getUChar("gen_model", static_cast<uint8_t>(config.rs485.generatorModels[0])));
+  }
+  // Legacy migration: if HAT600 was configured as generator, move it to ATS once.
+  if (!_prefs.isKey("ats_model")) {
+    for (uint8_t i = 0; i < Rs485Config::MAX_GENERATORS; ++i) {
+      if (config.rs485.generatorModels[i] == GeneratorModel::HAT600) {
+        config.rs485.atsEnabled = true;
+        config.rs485.atsModel = AtsModel::HAT600;
+        config.rs485.atsSlaveId = config.rs485.generatorSlaveIds[i];
+        config.rs485.generatorModels[i] = GeneratorModel::NONE;
+        break;
+      }
+    }
   }
   config.rs485.batteryEnabled = _prefs.getBool("batt_en", config.rs485.batteryEnabled);
   config.rs485.rectifierCount = _prefs.getUChar("rect_cnt", config.rs485.rectifierCount);
@@ -129,6 +145,9 @@ bool PreferencesStore::save(const DeviceConfig& config) {
 
   _prefs.putBool("pzem_en", config.rs485.pzemEnabled);
   _prefs.putUChar("pzem_sid", config.rs485.pzemSlaveId);
+  _prefs.putBool("ats_en", config.rs485.atsEnabled);
+  _prefs.putUChar("ats_sid", config.rs485.atsSlaveId);
+  _prefs.putUChar("ats_model", static_cast<uint8_t>(config.rs485.atsModel));
   _prefs.putBool("gen_en", config.rs485.generatorEnabled);
   _prefs.putUChar("gen_cnt", config.rs485.generatorCount);
   for (uint8_t i = 0; i < Rs485Config::MAX_GENERATORS; ++i) {

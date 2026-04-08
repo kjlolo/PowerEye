@@ -8,6 +8,7 @@
 #include "comms/MqttClient.h"
 #include "devices/Pzem016.h"
 #include "devices/Hgm6100nc.h"
+#include "devices/Hat600.h"
 #include "devices/BmsMonitor.h"
 #include "devices/FuelSensor.h"
 #include "devices/DigitalInputs.h"
@@ -42,6 +43,7 @@ private:
   MqttClient _mqtt;
   Pzem016 _pzem;
   Hgm6100nc _genset;
+  Hat600 _ats;
   BmsMonitor _battery;
   FuelSensor _fuel;
   DigitalInputs _inputs;
@@ -51,6 +53,7 @@ private:
   WebUI _webUi;
 
   unsigned long _lastPzemPoll = 0;
+  unsigned long _lastAtsPoll = 0;
   unsigned long _lastFuelPoll = 0;
   unsigned long _lastGensetPoll = 0;
   unsigned long _lastBatteryPoll = 0;
