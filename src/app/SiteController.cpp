@@ -89,6 +89,29 @@ namespace {
     return GeneratorModel::NONE;
   }
 
+  int resolveGeneratorSlot(const DeviceConfig& config, int requestedOneBased) {
+    const uint8_t count = config.rs485.generatorCount > Rs485Config::MAX_GENERATORS
+      ? Rs485Config::MAX_GENERATORS
+      : config.rs485.generatorCount;
+    if (count == 0) return -1;
+
+    if (requestedOneBased > 0) {
+      const int idx = requestedOneBased - 1;
+      if (idx >= 0 && idx < count &&
+          config.rs485.generatorModels[idx] == GeneratorModel::HGM6100NC &&
+          config.rs485.generatorSlaveIds[idx] >= 1 && config.rs485.generatorSlaveIds[idx] <= 247) {
+        return idx;
+      }
+    }
+
+    for (uint8_t i = 0; i < count; ++i) {
+      if (config.rs485.generatorModels[i] != GeneratorModel::HGM6100NC) continue;
+      if (config.rs485.generatorSlaveIds[i] < 1 || config.rs485.generatorSlaveIds[i] > 247) continue;
+      return i;
+    }
+    return -1;
+  }
+
   bool isGridAvailableFromPzem(const DeviceConfig& config, const EnergyData& energy) {
     if (!config.rs485.pzemEnabled) {
       return false;
@@ -658,6 +681,99 @@ void SiteController::handleMqttCommand(const String& topic, const String& payloa
     } else {
       Serial.printf("[MQTT] sync_now publish failed for request_id=%s\n", requestId.c_str());
     }
+    return;
+  }
+
+  if (cmd == "genset_start" || cmd == "genset_stop" || cmd == "genset_mode") {
+    if (!_config.rs485.generatorEnabled) {
+      Serial.println("[MQTT] genset cmd ignored: generator disabled");
+      return;
+    }
+    const int requestedIdx = doc["generator_index"] | 0;
+    const int slot = resolveGeneratorSlot(_config, requestedIdx);
+    if (slot < 0) {
+      Serial.println("[MQTT] genset cmd ignored: no valid HGM slot");
+      return;
+    }
+
+    _genset.setSlaveId(_config.rs485.generatorSlaveIds[slot]);
+    bool ok = false;
+    String action;
+    if (cmd == "genset_start") {
+      action = "start";
+      ok = _genset.remoteStart();
+    } else if (cmd == "genset_stop") {
+      action = "stop";
+      ok = _genset.remoteStop();
+    } else {
+      const String mode = doc["mode"] | "";
+      action = "mode:" + mode;
+      if (mode.equalsIgnoreCase("auto")) ok = _genset.setMode(Hgm6100nc::Mode::AUTO);
+      else if (mode.equalsIgnoreCase("manual")) ok = _genset.setMode(Hgm6100nc::Mode::MANUAL);
+      else if (mode.equalsIgnoreCase("stop")) ok = _genset.setMode(Hgm6100nc::Mode::STOP);
+      else {
+        Serial.printf("[MQTT] genset_mode invalid mode=%s\n", mode.c_str());
+        return;
+      }
+    }
+
+    if (ok) {
+      Serial.printf("[MQTT] genset cmd ok slot=%d sid=%u action=%s\n",
+                    slot + 1,
+                    _config.rs485.generatorSlaveIds[slot],
+                    action.c_str());
+    } else {
+      Serial.printf("[MQTT] genset cmd failed slot=%d sid=%u action=%s err=%s\n",
+                    slot + 1,
+                    _config.rs485.generatorSlaveIds[slot],
+                    action.c_str(),
+                    _genset.lastError().c_str());
+    }
+    return;
+  }
+
+  if (cmd == "ats_mode" || cmd == "ats_switch") {
+    if (!_config.rs485.atsEnabled || _config.rs485.atsModel != AtsModel::HAT600 ||
+        _config.rs485.atsSlaveId < 1 || _config.rs485.atsSlaveId > 247) {
+      Serial.println("[MQTT] ats cmd ignored: ATS not configured");
+      return;
+    }
+
+    _ats.setSlaveId(_config.rs485.atsSlaveId);
+    bool ok = false;
+    String action;
+    if (cmd == "ats_mode") {
+      const String mode = String((const char*)(doc["mode"] | ""));
+      action = "mode:" + mode;
+      if (mode.equalsIgnoreCase("auto")) ok = _ats.setMode(Hat600::Mode::AUTO);
+      else if (mode.equalsIgnoreCase("manual")) ok = _ats.setMode(Hat600::Mode::MANUAL);
+      else {
+        Serial.printf("[MQTT] ats_mode invalid mode=%s\n", mode.c_str());
+        return;
+      }
+    } else {
+      const String target = doc["to"] | "";
+      action = "switch:" + target;
+      if (target.equalsIgnoreCase("source1")) ok = _ats.switchTo(Hat600::SwitchTarget::SOURCE1);
+      else if (target.equalsIgnoreCase("source2")) ok = _ats.switchTo(Hat600::SwitchTarget::SOURCE2);
+      else if (target.equalsIgnoreCase("open_both")) ok = _ats.switchTo(Hat600::SwitchTarget::OPEN_BOTH);
+      else {
+        Serial.printf("[MQTT] ats_switch invalid to=%s\n", target.c_str());
+        return;
+      }
+    }
+
+    if (ok) {
+      Serial.printf("[MQTT] ats cmd ok sid=%u action=%s\n",
+                    _config.rs485.atsSlaveId,
+                    action.c_str());
+    } else {
+      Serial.printf("[MQTT] ats cmd failed sid=%u action=%s err=%s\n",
+                    _config.rs485.atsSlaveId,
+                    action.c_str(),
+                    _ats.lastError().c_str());
+    }
+    return;
   }
 }
 

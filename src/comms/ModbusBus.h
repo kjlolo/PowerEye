@@ -8,6 +8,7 @@ public:
   bool readHoldingRegisters(uint8_t slaveId, uint16_t startReg, uint16_t count, uint16_t* dest);
   bool readInputRegisters(uint8_t slaveId, uint16_t startReg, uint16_t count, uint16_t* dest);
   bool readCoils(uint8_t slaveId, uint16_t startReg, uint16_t count, bool* dest);
+  bool writeSingleCoil(uint8_t slaveId, uint16_t coilAddress, bool value);
   String lastError() const;
 
 private:

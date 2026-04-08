@@ -158,6 +158,36 @@ bool ModbusBus::readCoils(uint8_t slaveId, uint16_t startReg, uint16_t count, bo
   return true;
 }
 
+bool ModbusBus::writeSingleCoil(uint8_t slaveId, uint16_t coilAddress, bool value) {
+  uint8_t request[8] = {
+    slaveId,
+    0x05,
+    static_cast<uint8_t>(coilAddress >> 8),
+    static_cast<uint8_t>(coilAddress & 0xFF),
+    static_cast<uint8_t>(value ? 0xFF : 0x00),
+    0x00,
+    0,
+    0
+  };
+  const uint16_t reqCrc = crc16(request, 6);
+  request[6] = static_cast<uint8_t>(reqCrc & 0xFF);
+  request[7] = static_cast<uint8_t>((reqCrc >> 8) & 0xFF);
+
+  uint8_t response[8] = {};
+  if (!transact(request, sizeof(request), response, sizeof(response))) {
+    return false;
+  }
+
+  // For FC05, a valid response echoes request payload.
+  if (response[0] != slaveId || response[1] != 0x05 ||
+      response[2] != request[2] || response[3] != request[3] ||
+      response[4] != request[4] || response[5] != request[5]) {
+    _lastError = "bad_response";
+    return false;
+  }
+  return true;
+}
+
 String ModbusBus::lastError() const {
   return _lastError;
 }

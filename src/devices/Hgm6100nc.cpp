@@ -7,6 +7,12 @@ constexpr uint16_t REGISTER_BLOCK2_START = 0x0022;
 constexpr uint16_t REGISTER_BLOCK2_COUNT = 0x0011;
 constexpr uint16_t COIL_START = 0x0000;
 constexpr uint16_t COIL_COUNT = 0x0048;
+constexpr uint16_t COIL_MODE_AUTO = 0x0029;
+constexpr uint16_t COIL_MODE_MANUAL = 0x002A;
+constexpr uint16_t COIL_MODE_STOP = 0x002B;
+// HGM remote control command coils (commonly used mapping).
+constexpr uint16_t COIL_REMOTE_START = 0x002E;
+constexpr uint16_t COIL_REMOTE_STOP = 0x002F;
 
 uint32_t combineWords(uint16_t high, uint16_t low) {
   return (static_cast<uint32_t>(high) << 16) | static_cast<uint32_t>(low);
@@ -18,6 +24,50 @@ Hgm6100nc::Hgm6100nc(ModbusBus& bus, uint8_t slaveId)
 
 void Hgm6100nc::setSlaveId(uint8_t slaveId) {
   _slaveId = slaveId;
+}
+
+bool Hgm6100nc::setMode(Mode mode) {
+  bool ok = false;
+  switch (mode) {
+    case Mode::AUTO:
+      ok = _bus.writeSingleCoil(_slaveId, COIL_MODE_AUTO, true);
+      break;
+    case Mode::MANUAL:
+      ok = _bus.writeSingleCoil(_slaveId, COIL_MODE_MANUAL, true);
+      break;
+    case Mode::STOP:
+      ok = _bus.writeSingleCoil(_slaveId, COIL_MODE_STOP, true);
+      break;
+    default:
+      _lastError = "invalid_mode";
+      return false;
+  }
+  _lastError = ok ? "" : _bus.lastError();
+  return ok;
+}
+
+bool Hgm6100nc::remoteStart() {
+  bool ok = _bus.writeSingleCoil(_slaveId, COIL_REMOTE_START, true);
+  if (!ok) {
+    // Fallback for variants where dedicated start coil is not writable.
+    ok = setMode(Mode::MANUAL);
+  }
+  _lastError = ok ? "" : _bus.lastError();
+  return ok;
+}
+
+bool Hgm6100nc::remoteStop() {
+  bool ok = _bus.writeSingleCoil(_slaveId, COIL_REMOTE_STOP, true);
+  if (!ok) {
+    // Fallback for variants where dedicated stop coil is not writable.
+    ok = setMode(Mode::STOP);
+  }
+  _lastError = ok ? "" : _bus.lastError();
+  return ok;
+}
+
+String Hgm6100nc::lastError() const {
+  return _lastError;
 }
 
 bool Hgm6100nc::poll() {

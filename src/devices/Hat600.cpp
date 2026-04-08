@@ -5,6 +5,16 @@ constexpr uint16_t COIL_START = 0x0000;
 constexpr uint16_t COIL_COUNT = 0x0030;
 constexpr uint16_t REG_START = 0x0000;
 constexpr uint16_t REG_COUNT = 0x0014;
+// Function code 05 writable coils (Table 3)
+constexpr uint16_t W_REMOTE_SOURCE1_CLOSE = 0x0000;
+constexpr uint16_t W_REMOTE_OPEN = 0x0001;
+constexpr uint16_t W_REMOTE_SOURCE2_CLOSE = 0x0002;
+constexpr uint16_t W_MODE_AUTO_MANUAL = 0x0004;
+constexpr uint16_t W_PRIORITY_SOURCE1 = 0x0005;
+constexpr uint16_t W_PRIORITY_SOURCE2 = 0x0006;
+constexpr uint16_t W_ALARM_RESET = 0x0007;
+constexpr uint16_t W_REMOTE_START_GENERATOR = 0x0008;
+constexpr uint16_t W_REMOTE_STOP_GENERATOR = 0x0009;
 
 enum CoilIndex : uint16_t {
   SOURCE1_SWITCH_CLOSE = 0x0000,
@@ -53,6 +63,67 @@ Hat600::Hat600(ModbusBus& bus, uint8_t slaveId)
 
 void Hat600::setSlaveId(uint8_t slaveId) {
   _slaveId = slaveId;
+}
+
+bool Hat600::setMode(Mode mode) {
+  const bool autoMode = (mode == Mode::AUTO);
+  const bool ok = _bus.writeSingleCoil(_slaveId, W_MODE_AUTO_MANUAL, autoMode);
+  _lastError = ok ? "" : _bus.lastError();
+  return ok;
+}
+
+bool Hat600::switchTo(SwitchTarget target) {
+  bool ok = false;
+  switch (target) {
+    case SwitchTarget::SOURCE1:
+      ok = _bus.writeSingleCoil(_slaveId, W_REMOTE_SOURCE1_CLOSE, true);
+      break;
+    case SwitchTarget::SOURCE2:
+      ok = _bus.writeSingleCoil(_slaveId, W_REMOTE_SOURCE2_CLOSE, true);
+      break;
+    case SwitchTarget::OPEN_BOTH:
+      ok = _bus.writeSingleCoil(_slaveId, W_REMOTE_OPEN, true);
+      break;
+    default:
+      _lastError = "invalid_target";
+      return false;
+  }
+  _lastError = ok ? "" : _bus.lastError();
+  return ok;
+}
+
+bool Hat600::setPrioritySource1() {
+  const bool ok = _bus.writeSingleCoil(_slaveId, W_PRIORITY_SOURCE1, true);
+  _lastError = ok ? "" : _bus.lastError();
+  return ok;
+}
+
+bool Hat600::setPrioritySource2() {
+  const bool ok = _bus.writeSingleCoil(_slaveId, W_PRIORITY_SOURCE2, true);
+  _lastError = ok ? "" : _bus.lastError();
+  return ok;
+}
+
+bool Hat600::resetAlarm() {
+  const bool ok = _bus.writeSingleCoil(_slaveId, W_ALARM_RESET, true);
+  _lastError = ok ? "" : _bus.lastError();
+  return ok;
+}
+
+bool Hat600::remoteStartGenerator() {
+  const bool ok = _bus.writeSingleCoil(_slaveId, W_REMOTE_START_GENERATOR, true);
+  _lastError = ok ? "" : _bus.lastError();
+  return ok;
+}
+
+bool Hat600::remoteStopGenerator() {
+  const bool ok = _bus.writeSingleCoil(_slaveId, W_REMOTE_STOP_GENERATOR, true);
+  _lastError = ok ? "" : _bus.lastError();
+  return ok;
+}
+
+String Hat600::lastError() const {
+  return _lastError;
 }
 
 bool Hat600::poll() {
